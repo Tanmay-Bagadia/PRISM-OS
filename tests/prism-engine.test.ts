@@ -1,3 +1,4 @@
+import { describe, test, expect } from 'vitest';
 import type {
   CognitivePosture,
   StageTelemetry,
@@ -10,6 +11,14 @@ import type {
   DeviceContext,
   RemoteThresholds,
 } from '../src/types/prism';
+import {
+  getFirebaseApp,
+  getFirebaseAI,
+  getFirebaseAuth,
+  getFirebaseFirestore,
+  getFirebaseRemoteConfig,
+  initializeFirebase,
+} from '../src/lib/firebase/client';
 
 describe('Shared contracts', () => {
   test('StageTelemetry has required fields', () => {
@@ -43,5 +52,38 @@ describe('Shared contracts', () => {
       ],
     };
     expect(output.telemetry).toHaveLength(3);
+  });
+});
+
+describe('Firebase client', () => {
+  test('getFirebaseApp returns a FirebaseApp instance', () => {
+    const app = getFirebaseApp();
+    expect(app).toBeDefined();
+    expect(app.name).toBeDefined();
+  });
+
+  test('getFirebaseAI returns an AI instance', () => {
+    const ai = getFirebaseAI();
+    expect(ai).toBeDefined();
+  });
+
+  test('getFirebaseAuth returns an Auth instance', () => {
+    const auth = getFirebaseAuth();
+    expect(auth).toBeDefined();
+  });
+
+  test('getFirebaseFirestore returns a Firestore instance', () => {
+    const db = getFirebaseFirestore();
+    expect(db).toBeDefined();
+    expect(db.type).toBe('firestore');
+  });
+
+  test('getFirebaseRemoteConfig returns RemoteConfig instance if in browser/supported env', () => {
+    const rc = getFirebaseRemoteConfig();
+    expect(rc).toBeDefined();
+  });
+
+  test('initializeFirebase runs without error', async () => {
+    await expect(initializeFirebase()).resolves.not.toThrow();
   });
 });

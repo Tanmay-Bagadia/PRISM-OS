@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // PRISM Reasoning Blueprints Cache
+    // Offline and online synchronization of Stage 2 Cloud Blueprints
+    match /blueprints/{blueprintId} {
+      // Authenticated users (including anonymous judges) can read cached blueprints
+      allow read: if request.auth != null;
+      
+      // Creating a new blueprint requires authenticated state and strict schema validation
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasAll(['schema', 'goal', 'steps', 'topologyHash'])
+        && request.resource.data.schema == 'prism-blueprint-v1'
+        && request.resource.data.steps is list
+        && request.resource.data.goal is string;
+      
+      // Blueprints are immutable cached reasoning artifacts; updates and deletes are disallowed
+      allow update, delete: if false;
+    }
+
+    // Default deny for all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
