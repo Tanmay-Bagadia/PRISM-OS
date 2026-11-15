@@ -191,7 +191,7 @@ export const App: React.FC = () => {
   };
 
   // ─── Execute PRISM Pipeline ───────────────────────────────────────────
-  const executePipeline = async (overrideDevice?: DeviceContext) => {
+  const executePipeline = async (overrideDevice?: DeviceContext, overridePrompt?: string) => {
     const activeFile = files.find((f) => f.id === activeFileId) || files[0];
     if (!activeFile?.content.trim()) return;
 
@@ -199,6 +199,11 @@ export const App: React.FC = () => {
     setActiveStageIndex(0);
 
     const activeDevice = overrideDevice || device;
+    const activePrompt = (overridePrompt || prompt).trim() || selectedScenario.defaultPrompt;
+
+    if (overridePrompt) {
+      setPrompt(overridePrompt);
+    }
 
     try {
       // Simulate visual stage progression for judges
@@ -207,7 +212,7 @@ export const App: React.FC = () => {
 
       const result = await runPrismPipeline({
         rawContent: activeFile.content,
-        prompt: prompt.trim() || selectedScenario.defaultPrompt,
+        prompt: activePrompt,
         posture,
         device: activeDevice,
         thresholds,
@@ -251,14 +256,14 @@ export const App: React.FC = () => {
   };
 
   // ─── Follow-Up in Offline Mode (Demonstrating 63ms Cache Hit) ──────────
-  const handleFollowUpOffline = async () => {
+  const handleFollowUpOffline = async (customPrompt?: string) => {
     const offlineDevice: DeviceContext = {
       ...device,
       online: false,
     };
     setDevice(offlineDevice);
     showToast('Air-gap engaged (online: false). Re-executing against Firestore SHA-256 cache...');
-    await executePipeline(offlineDevice);
+    await executePipeline(offlineDevice, customPrompt);
   };
 
   return (
@@ -316,6 +321,11 @@ export const App: React.FC = () => {
         telemetry={telemetry}
         onFollowUpOffline={handleFollowUpOffline}
         isOfflineMode={!device.online}
+        onToggleOffline={() => {
+          const newOnline = !device.online;
+          setDevice((prev) => ({ ...prev, online: newOnline }));
+          showToast(newOnline ? 'Connected to Network' : 'Simulating Hospital Basement / Offline Mode');
+        }}
       />
 
       {/* Mobile / Companion Blueprint Drawer */}
