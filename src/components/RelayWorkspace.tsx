@@ -9,7 +9,6 @@ import type {
 import { LocalVaultLane } from './lanes/LocalVaultLane';
 import { WireXRayLane } from './lanes/WireXRayLane';
 import { HydratedOutputLane } from './lanes/HydratedOutputLane';
-import { Lock, Radio, FileText } from 'lucide-react';
 
 interface RelayWorkspaceProps {
   files: ScenarioFile[];
@@ -31,6 +30,9 @@ interface RelayWorkspaceProps {
   onFollowUpOffline: (customPrompt?: string) => void;
   isOfflineMode: boolean;
   onToggleOffline?: () => void;
+  isWireDrawerOpen?: boolean;
+  onOpenWireDrawer?: () => void;
+  onCloseWireDrawer?: () => void;
 }
 
 export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
@@ -53,63 +55,27 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
   onFollowUpOffline,
   isOfflineMode,
   onToggleOffline,
+  isWireDrawerOpen = false,
+  onOpenWireDrawer,
+  onCloseWireDrawer,
 }) => {
-  // Mobile active lane tab switcher
-  const [mobileActiveLane, setMobileActiveLane] = React.useState<1 | 2 | 3>(1);
-
-  // Automatically focus Lane 2 or 3 as pipeline progresses
+  // Close drawer on Escape key
   React.useEffect(() => {
-    if (isRunning) {
-      if (activeStageIndex === 1) setMobileActiveLane(2);
-      if (activeStageIndex === 2) setMobileActiveLane(3);
-    } else if (hydratedReport) {
-      setMobileActiveLane(3);
-    }
-  }, [isRunning, activeStageIndex, hydratedReport]);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isWireDrawerOpen && onCloseWireDrawer) {
+        onCloseWireDrawer();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isWireDrawerOpen, onCloseWireDrawer]);
 
   return (
-    <main className="flex-1 flex flex-col p-4 max-w-[1720px] mx-auto w-full min-h-0">
-      {/* Mobile Tab Switcher */}
-      <div className="flex xl:hidden mb-3 p-1 rounded-xl bg-[#0b0f17] border border-white/[0.08] text-xs font-mono">
-        <button
-          onClick={() => setMobileActiveLane(1)}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg transition-all ${
-            mobileActiveLane === 1
-              ? 'bg-[#151c2c] text-emerald-400 font-bold border border-emerald-500/30'
-              : 'text-zinc-400 hover:text-white'
-          }`}
-        >
-          <Lock className="w-3.5 h-3.5" />
-          <span>Lane 1: Vault</span>
-        </button>
-        <button
-          onClick={() => setMobileActiveLane(2)}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg transition-all ${
-            mobileActiveLane === 2
-              ? 'bg-[#151c2c] text-sky-400 font-bold border border-sky-500/30'
-              : 'text-zinc-400 hover:text-white'
-          }`}
-        >
-          <Radio className="w-3.5 h-3.5" />
-          <span>Lane 2: X-Ray</span>
-        </button>
-        <button
-          onClick={() => setMobileActiveLane(3)}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg transition-all ${
-            mobileActiveLane === 3
-              ? 'bg-[#151c2c] text-indigo-400 font-bold border border-indigo-500/30'
-              : 'text-zinc-400 hover:text-white'
-          }`}
-        >
-          <FileText className="w-3.5 h-3.5" />
-          <span>Lane 3: Report</span>
-        </button>
-      </div>
-
-      {/* 3-Lane Grid */}
-      <div className="flex-1 grid grid-cols-1 xl:grid-cols-3 gap-4 min-h-[640px]">
-        {/* Lane 1: Local Vault */}
-        <div className={`h-full ${mobileActiveLane === 1 ? 'block' : 'hidden xl:block'}`}>
+    <main className="flex-1 w-full bg-[#0e1015]">
+      {/* Calm, Flowy 2-Step Workspace Canvas */}
+      <div className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-8 space-y-8">
+        {/* Step 1: Confidential Local Context */}
+        <section aria-label="Step 1: Confidential Local Context">
           <LocalVaultLane
             files={files}
             activeFileId={activeFileId}
@@ -125,22 +91,10 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
             isOfflineMode={isOfflineMode}
             onToggleOffline={onToggleOffline}
           />
-        </div>
+        </section>
 
-        {/* Lane 2: Wire X-Ray */}
-        <div className={`h-full ${mobileActiveLane === 2 ? 'block' : 'hidden xl:block'}`}>
-          <WireXRayLane
-            topology={topology}
-            blueprint={blueprint}
-            stage1Telemetry={telemetry?.[0]}
-            stage2Telemetry={telemetry?.[1]}
-            isRunning={isRunning}
-            activeStageIndex={activeStageIndex}
-          />
-        </div>
-
-        {/* Lane 3: Hydrated Output */}
-        <div className={`h-full ${mobileActiveLane === 3 ? 'block' : 'hidden xl:block'}`}>
+        {/* Step 2: Grounded Local Brief */}
+        <section aria-label="Step 2: Grounded Local Brief">
           <HydratedOutputLane
             hydratedReport={hydratedReport}
             stage3Telemetry={telemetry?.[2]}
@@ -149,10 +103,39 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
             activeStageIndex={activeStageIndex}
             onFollowUpOffline={onFollowUpOffline}
             isOfflineMode={isOfflineMode}
+            onOpenWireDrawer={onOpenWireDrawer}
           />
-        </div>
+        </section>
       </div>
+
+      {/* Progressive Disclosure: Privacy Wire Slide-Over Drawer */}
+      {isWireDrawerOpen && (
+        <div className="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
+            onClick={onCloseWireDrawer}
+            aria-hidden="true"
+          />
+
+          {/* Slide-over panel */}
+          <div className="fixed inset-y-0 right-0 max-w-2xl w-full flex pl-6 sm:pl-10">
+            <div className="w-full h-full bg-[#11141c] border-l border-white/[0.08] shadow-2xl flex flex-col animate-in slide-in-from-right duration-300 ease-out">
+              <WireXRayLane
+                topology={topology}
+                blueprint={blueprint}
+                stage1Telemetry={telemetry?.[0]}
+                stage2Telemetry={telemetry?.[1]}
+                isRunning={isRunning}
+                activeStageIndex={activeStageIndex}
+                onClose={onCloseWireDrawer}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 };
 
+export default RelayWorkspace;

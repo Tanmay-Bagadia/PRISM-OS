@@ -69,8 +69,9 @@ export const App: React.FC = () => {
   const [hydratedReport, setHydratedReport] = React.useState<string>('');
   const [telemetry, setTelemetry] = React.useState<StageTelemetry[] | null>(null);
 
-  // ─── Blueprint Sync Drawer State ──────────────────────────────────────
+  // ─── Blueprint Sync Drawer & Privacy Wire Drawer State ─────────────
   const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
+  const [isWireDrawerOpen, setIsWireDrawerOpen] = React.useState(false);
   const [cachedBlueprints, setCachedBlueprints] = React.useState<CachedBlueprintRecord[]>([]);
   const [toastMessage, setToastMessage] = React.useState<string | null>(null);
 
@@ -199,6 +200,7 @@ export const App: React.FC = () => {
     setBlueprint(null);
     setHydratedReport('');
     setTelemetry(null);
+    setIsWireDrawerOpen(false);
     showToast(`Loaded "${scenario.title}" with ${scenario.files.length} confidential files`);
   };
 
@@ -286,7 +288,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#06080d] text-zinc-100 flex flex-col font-sans selection:bg-emerald-500/30">
+    <div className="min-h-screen bg-[#0e1015] text-zinc-100 flex flex-col font-sans selection:bg-emerald-500/30">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-lg bg-[#141b2b] border border-white/20 text-xs font-mono text-zinc-100 shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
@@ -306,9 +308,17 @@ export const App: React.FC = () => {
         onOpenDrawer={() => setIsDrawerOpen(true)}
         blueprintCount={cachedBlueprints.length}
         isFirebaseReady={isFirebaseReady}
+        onOpenWireDrawer={() => setIsWireDrawerOpen(true)}
+        selectedScenarioId={selectedScenario.id}
+        onSelectScenario={handleSelectScenario}
+        onToggleOffline={() => {
+          const newOnline = !device.online;
+          setDevice((prev) => ({ ...prev, online: newOnline }));
+          showToast(newOnline ? 'Connected to Network' : 'Simulating Hospital Basement / Offline Mode');
+        }}
       />
 
-      {/* 1-Click Judge Scenario Bar */}
+      {/* 1-Click Judge Scenario Bar (Mobile Viewport Fallback) */}
       <ScenarioSelector
         selectedScenarioId={selectedScenario.id}
         onSelectScenario={handleSelectScenario}
@@ -320,7 +330,7 @@ export const App: React.FC = () => {
         }}
       />
 
-      {/* 3-Lane Relay Workspace */}
+      {/* Calm 2-Step Progressive Workspace */}
       <RelayWorkspace
         files={files}
         activeFileId={activeFileId}
@@ -345,6 +355,9 @@ export const App: React.FC = () => {
           setDevice((prev) => ({ ...prev, online: newOnline }));
           showToast(newOnline ? 'Connected to Network' : 'Simulating Hospital Basement / Offline Mode');
         }}
+        isWireDrawerOpen={isWireDrawerOpen}
+        onOpenWireDrawer={() => setIsWireDrawerOpen(true)}
+        onCloseWireDrawer={() => setIsWireDrawerOpen(false)}
       />
 
       {/* Mobile / Companion Blueprint Drawer */}
