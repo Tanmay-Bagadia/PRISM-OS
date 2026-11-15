@@ -24,8 +24,12 @@ import {
 import {
   getRemoteConfig,
   fetchAndActivate,
+  getNumber,
+  getString,
+  getValue,
   type RemoteConfig,
 } from 'firebase/remote-config';
+import type { RemoteThresholds } from '../../types/prism';
 
 // Firebase configuration strictly from Vite environment variables (zero hardcoded secrets)
 const firebaseConfig: FirebaseOptions = {
@@ -117,10 +121,54 @@ export function getFirebaseRemoteConfig(): RemoteConfig {
       maxRttForCloud: 2000,
       vaultForceLocal: true,
       frontierForceCloud: true,
+      cloudModel: 'gemini-2.0-flash',
     };
     remoteConfigInstance.settings.minimumFetchIntervalMillis = 3600000; // 1 hour
   }
   return remoteConfigInstance;
+}
+
+/**
+ * Reads dynamic routing thresholds from Firebase Remote Config with safe defaults.
+ */
+export function getRemoteConfigThresholds(fallback?: Partial<RemoteThresholds>): RemoteThresholds {
+  try {
+    const rc = getFirebaseRemoteConfig();
+    const minBattery = getNumber(rc, 'minBatteryForCloud') || fallback?.minBatteryForCloud || 0.2;
+    const maxRtt = getNumber(rc, 'maxRttForCloud') || fallback?.maxRttForCloud || 2000;
+    const vaultVal = getValue(rc, 'vaultForceLocal');
+    const frontierVal = getValue(rc, 'frontierForceCloud');
+
+    return {
+      minBatteryForCloud: minBattery,
+      maxRttForCloud: maxRtt,
+      vaultForceLocal: vaultVal.asString() !== '' ? vaultVal.asBoolean() : (fallback?.vaultForceLocal ?? true),
+      frontierForceCloud: frontierVal.asString() !== '' ? frontierVal.asBoolean() : (fallback?.frontierForceCloud ?? true),
+    };
+  } catch {
+    return {
+      minBatteryForCloud: fallback?.minBatteryForCloud ?? 0.2,
+      maxRttForCloud: fallback?.maxRttForCloud ?? 2000,
+      vaultForceLocal: fallback?.vaultForceLocal ?? true,
+      frontierForceCloud: fallback?.frontierForceCloud ?? true,
+    };
+  }
+}
+
+/**
+ * Reads cloud model name dynamically from Firebase Remote Config or environment.
+ */
+export function getRemoteConfigCloudModel(fallbackModel?: string): string {
+  try {
+    const rc = getFirebaseRemoteConfig();
+    const configuredModel = getString(rc, 'cloudModel');
+    if (configuredModel && configuredModel.trim().length > 0) {
+      return configuredModel.trim();
+    }
+  } catch {
+    // Non-blocking fallback
+  }
+  return import.meta.env.VITE_GEMINI_CLOUD_MODEL || fallbackModel || 'gemini-2.0-flash';
 }
 
 /**

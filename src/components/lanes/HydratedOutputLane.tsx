@@ -14,6 +14,7 @@ import {
 interface HydratedOutputLaneProps {
   hydratedReport: string;
   stage3Telemetry?: StageTelemetry;
+  stage2Telemetry?: StageTelemetry;
   isRunning: boolean;
   activeStageIndex: number;
   onFollowUpOffline: (customPrompt?: string) => void;
@@ -23,6 +24,7 @@ interface HydratedOutputLaneProps {
 export const HydratedOutputLane: React.FC<HydratedOutputLaneProps> = ({
   hydratedReport,
   stage3Telemetry,
+  stage2Telemetry,
   isRunning,
   activeStageIndex,
   onFollowUpOffline,
@@ -286,7 +288,12 @@ export const HydratedOutputLane: React.FC<HydratedOutputLaneProps> = ({
           <div className="flex items-center justify-between text-[11px] text-zinc-400 font-mono">
             <span className="font-semibold text-zinc-200 flex items-center gap-1.5">
               <Zap className="w-3.5 h-3.5 text-amber-400" />
-              <span>Offline Follow-Up Query (63ms Firestore Cache Hit)</span>
+              <span>
+                Offline Follow-Up Query{' '}
+                {stage2Telemetry?.cacheStatus === 'hit'
+                  ? `(${stage2Telemetry.latencyMs}ms Firestore Cache Hit)`
+                  : '(Instant Firestore Offline Cache)'}
+              </span>
             </span>
             <span className="text-[10px] text-zinc-500">Air-Gapped • Local Hydration</span>
           </div>
@@ -314,7 +321,10 @@ export const HydratedOutputLane: React.FC<HydratedOutputLaneProps> = ({
               }`}
             >
               <WifiOff className="w-3.5 h-3.5 text-amber-400" />
-              <span>Submit Offline Query (~63ms)</span>
+              <span>
+                Submit Offline Query
+                {stage2Telemetry?.cacheStatus === 'hit' ? ` (${stage2Telemetry.latencyMs}ms)` : ''}
+              </span>
             </button>
           </div>
         </div>

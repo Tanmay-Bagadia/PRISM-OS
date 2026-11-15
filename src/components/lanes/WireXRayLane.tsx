@@ -209,7 +209,7 @@ export const WireXRayLane: React.FC<WireXRayLaneProps> = ({
                     <span>
                       {stage2Telemetry.cacheStatus === 'hit'
                         ? 'Firestore Cache HIT (Offline Saved)'
-                        : 'Cloud Gemini 3.5 Flash-Lite'}
+                        : (import.meta.env.VITE_GEMINI_CLOUD_MODEL || 'Cloud Gemini 3.5 Flash-Lite')}
                     </span>
                   </span>
                 )}

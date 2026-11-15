@@ -11,7 +11,11 @@ import type {
 } from './types/prism';
 import { runPrismPipeline, computeTopologyHash } from './lib/prism/engine';
 import { checkNanoAvailability, monitorNanoDownload } from './lib/prism/nanoStatus';
-import { initializeFirebase, getFirebaseFirestore } from './lib/firebase/client';
+import {
+  initializeFirebase,
+  getFirebaseFirestore,
+  getRemoteConfigThresholds,
+} from './lib/firebase/client';
 import { collection, getDocs } from 'firebase/firestore';
 import { BENCHMARK_SCENARIOS, type BenchmarkScenario } from './data/scenarios';
 import { TelemetryBar } from './components/TelemetryBar';
@@ -32,19 +36,19 @@ export const App: React.FC = () => {
   });
 
   // ─── Device & Routing Context ─────────────────────────────────────────
-  const [device, setDevice] = React.useState<DeviceContext>({
-    batteryLevel: 0.95,
-    networkRttMs: 42,
-    nanoAvailable: false,
-    online: true,
+  const [device, setDevice] = React.useState<DeviceContext>(() => {
+    const navConn = typeof navigator !== 'undefined'
+      ? (navigator as unknown as { connection?: { rtt?: number } }).connection
+      : undefined;
+    return {
+      batteryLevel: 1.0,
+      networkRttMs: typeof navConn?.rtt === 'number' && navConn.rtt > 0 ? navConn.rtt : 45,
+      nanoAvailable: false,
+      online: typeof navigator !== 'undefined' ? navigator.onLine : true,
+    };
   });
 
-  const [thresholds] = React.useState<RemoteThresholds>({
-    minBatteryForCloud: 0.2,
-    maxRttForCloud: 2000,
-    vaultForceLocal: true,
-    frontierForceCloud: true,
-  });
+  const [thresholds, setThresholds] = React.useState<RemoteThresholds>(() => getRemoteConfigThresholds());
 
   // ─── Scenario & Workspace State ───────────────────────────────────────
   const [selectedScenario, setSelectedScenario] = React.useState<BenchmarkScenario>(
@@ -77,10 +81,11 @@ export const App: React.FC = () => {
 
   // ─── Lifecycle: Firebase Init & Nano Monitoring ───────────────────────
   React.useEffect(() => {
-    // 1. Initialize Firebase services
+    // 1. Initialize Firebase services & fetch Remote Config thresholds
     initializeFirebase()
       .then(() => {
         setIsFirebaseReady(true);
+        setThresholds(getRemoteConfigThresholds());
         refreshBlueprintsFromFirestore();
       })
       .catch((err) => {
@@ -111,6 +116,23 @@ export const App: React.FC = () => {
       window.addEventListener('online', handleOnline);
       window.addEventListener('offline', handleOffline);
 
+      // Network Information API for live RTT telemetry if supported
+      const navWithConn = navigator as unknown as {
+        connection?: {
+          rtt?: number;
+          addEventListener?: (evt: string, fn: () => void) => void;
+          removeEventListener?: (evt: string, fn: () => void) => void;
+        };
+      };
+      const handleConnChange = () => {
+        if (typeof navWithConn.connection?.rtt === 'number' && navWithConn.connection.rtt > 0) {
+          setDevice((prev) => ({ ...prev, networkRttMs: navWithConn.connection!.rtt! }));
+        }
+      };
+      if (navWithConn.connection?.addEventListener) {
+        navWithConn.connection.addEventListener('change', handleConnChange);
+      }
+
       // Battery API if supported
       const navWithBattery = navigator as unknown as {
         getBattery?: () => Promise<{
@@ -131,6 +153,9 @@ export const App: React.FC = () => {
         unsubscribeNano();
         window.removeEventListener('online', handleOnline);
         window.removeEventListener('offline', handleOffline);
+        if (navWithConn.connection?.removeEventListener) {
+          navWithConn.connection.removeEventListener('change', handleConnChange);
+        }
       };
     }
 
@@ -206,20 +231,14 @@ export const App: React.FC = () => {
     }
 
     try {
-      // Simulate visual stage progression for judges
-      const stageTimer1 = setTimeout(() => setActiveStageIndex(1), 300);
-      const stageTimer2 = setTimeout(() => setActiveStageIndex(2), 700);
-
       const result = await runPrismPipeline({
         rawContent: activeFile.content,
         prompt: activePrompt,
         posture,
         device: activeDevice,
         thresholds,
+        onStageProgress: (stageIndex) => setActiveStageIndex(stageIndex),
       });
-
-      clearTimeout(stageTimer1);
-      clearTimeout(stageTimer2);
 
       setTopology(result.topology);
       setBlueprint(result.blueprint);

@@ -12,6 +12,8 @@ import {
   getFirebaseAuth,
   getFirebaseFirestore,
   getFirebaseRemoteConfig,
+  getRemoteConfigThresholds,
+  getRemoteConfigCloudModel,
   initializeFirebase,
 } from '../src/lib/firebase/client';
 import {
@@ -555,6 +557,119 @@ Settlement Offer Demanded: $750,000.00
       expect(topoStr).not.toMatch(/whistle\.blower@secure-reporting\.org/);
       expect(result.telemetry[0].bytesSentToCloud).toBe(0);
       expect(new TextEncoder().encode(topoStr).length).toBeLessThan(2048);
+    });
+  });
+
+  describe('Dynamic End-to-End Pipeline & Zero Hardcoded AI Outputs', () => {
+    test('Remote Config getters return dynamic thresholds and cloud model', () => {
+      const thresholds = getRemoteConfigThresholds();
+      expect(thresholds).toBeDefined();
+      expect(thresholds.minBatteryForCloud).toBeGreaterThanOrEqual(0);
+      expect(thresholds.maxRttForCloud).toBeGreaterThan(0);
+
+      const model = getRemoteConfigCloudModel();
+      expect(typeof model).toBe('string');
+      expect(model.length).toBeGreaterThan(0);
+    });
+
+    test('extracts dynamic entities tailored to input data rather than static nodes', async () => {
+      const DB_DATA = `
+Server: prod-cluster-us-east
+Port: 5432
+DatabaseEngine: PostgreSQL-16
+QueryLatency: 450ms
+ErrorRate: 4.8%
+AdminEmail: admin-dba@internal-corp.net
+      `.trim();
+
+      const CLINICAL_DATA = `
+Patient: Jane Doe
+BloodPressure: 118/76 mmHg
+HeartRate: 72 bpm
+Medication: Metformin 500mg
+Physician: Dr. Adams (NPI: 9812739102)
+      `.trim();
+
+      const resultDB = await runPrismPipeline({
+        rawContent: DB_DATA,
+        prompt: 'Formulate index rebalance and connection pooling mitigation plan',
+        posture: 'vault',
+        device: { batteryLevel: 1.0, networkRttMs: 30, nanoAvailable: false, online: false },
+        thresholds: { minBatteryForCloud: 0.2, maxRttForCloud: 2000, vaultForceLocal: true, frontierForceCloud: true },
+      });
+
+      const resultClinical = await runPrismPipeline({
+        rawContent: CLINICAL_DATA,
+        prompt: 'Review glycemic control and blood pressure stability directives',
+        posture: 'vault',
+        device: { batteryLevel: 1.0, networkRttMs: 30, nanoAvailable: false, online: false },
+        thresholds: { minBatteryForCloud: 0.2, maxRttForCloud: 2000, vaultForceLocal: true, frontierForceCloud: true },
+      });
+
+      // Verify DB topology has DB-specific entity labels
+      const dbLabels = resultDB.topology.entities.map((e) => e.label.toLowerCase()).join(' ');
+      expect(dbLabels).toMatch(/server|database|query|latency|port/i);
+      expect(dbLabels).not.toMatch(/bloodpressure|glycemic|patient/i);
+
+      // Verify Clinical topology has Clinical-specific entity labels
+      const clinLabels = resultClinical.topology.entities.map((e) => e.label.toLowerCase()).join(' ');
+      expect(clinLabels).toMatch(/bloodpressure|heartrate|medication|patient/i);
+      expect(clinLabels).not.toMatch(/postgresql|server|port|database/i);
+    });
+
+    test('generates dynamic blueprint steps without canned static phrases', async () => {
+      const CYBER_PROMPT = 'Isolate ransomware command and control channels and block lateral SMB spread';
+      const CYBER_DATA = `
+ThreatActor: APT-442
+Protocol: SMBv1
+Port: 445
+EncryptedShares: 14
+CompromisedHost: 10.0.4.19
+      `.trim();
+
+      const result = await runPrismPipeline({
+        rawContent: CYBER_DATA,
+        prompt: CYBER_PROMPT,
+        posture: 'vault',
+        device: { batteryLevel: 1.0, networkRttMs: 30, nanoAvailable: false, online: false },
+        thresholds: { minBatteryForCloud: 0.2, maxRttForCloud: 2000, vaultForceLocal: true, frontierForceCloud: true },
+      });
+
+      // The blueprint steps must NOT be the static canned phrases:
+      // "Audit local entity telemetry and compute baseline distributions"
+      // "Cross-correlate relational entities against target objectives"
+      expect(result.blueprint.steps[0]!.action).not.toBe('Audit local entity telemetry and compute baseline distributions');
+      expect(result.blueprint.steps[1]!.action).not.toBe('Cross-correlate relational entities against target objectives');
+
+      // The dynamic blueprint must incorporate elements of the prompt or topology
+      const allStepActions = result.blueprint.steps.map((s) => s.action.toLowerCase()).join(' ');
+      expect(allStepActions).toMatch(/smb|ransomware|threat|isolate|protocol|port|control|lateral/i);
+    });
+
+    test('Stage 3 report dynamically synthesizes Dual-Grounding comparison with real metrics', async () => {
+      const FIN_DATA = `
+Company: Cyberdyne Corp
+MonthlyBurn: $850,000.00
+CashBalance: $12,400,000.00
+Headcount: 65
+CloudCost: $92,000.00
+      `.trim();
+
+      const result = await runPrismPipeline({
+        rawContent: FIN_DATA,
+        prompt: 'Audit cash runway extinction date and evaluate cloud infrastructure cost reduction',
+        posture: 'vault',
+        device: { batteryLevel: 1.0, networkRttMs: 30, nanoAvailable: false, online: false },
+        thresholds: { minBatteryForCloud: 0.2, maxRttForCloud: 2000, vaultForceLocal: true, frontierForceCloud: true },
+      });
+
+      // Verify the report includes the real raw metrics
+      expect(result.hydratedReport).toContain('$850,000.00');
+      expect(result.hydratedReport).toContain('$12,400,000.00');
+      expect(result.hydratedReport).toContain('65');
+
+      // Verify it contains a Dual Grounding comparison contrasting local real value vs wire redacted token
+      expect(result.hydratedReport).toMatch(/dual|grounding|wire|redact/i);
     });
   });
 });

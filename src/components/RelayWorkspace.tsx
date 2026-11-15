@@ -144,6 +144,7 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
           <HydratedOutputLane
             hydratedReport={hydratedReport}
             stage3Telemetry={telemetry?.[2]}
+            stage2Telemetry={telemetry?.[1]}
             isRunning={isRunning}
             activeStageIndex={activeStageIndex}
             onFollowUpOffline={onFollowUpOffline}

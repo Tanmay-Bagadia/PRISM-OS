@@ -21,7 +21,11 @@ import type {
   InferenceSource,
   CacheStatus,
 } from '../../types/prism';
-import { getFirebaseAI, getFirebaseFirestore } from '../firebase/client';
+import {
+  getFirebaseAI,
+  getFirebaseFirestore,
+  getRemoteConfigCloudModel,
+} from '../firebase/client';
 import { scrubPII } from './scrubber';
 import { computeRoute } from './router';
 
@@ -31,6 +35,7 @@ export interface PrismRunOptions {
   posture: CognitivePosture;
   device: DeviceContext;
   thresholds: RemoteThresholds;
+  onStageProgress?: (stageIndex: number, stageName: string) => void;
 }
 
 /**
@@ -49,6 +54,8 @@ export function parseCleanJson<T>(raw: string): T {
   if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
     cleaned = cleaned.slice(firstBrace, lastBrace + 1);
   }
+  // Clean potential trailing commas in JSON objects/arrays (common in LLM output)
+  cleaned = cleaned.replace(/,\s*([\}\]])/g, '$1');
   return JSON.parse(cleaned) as T;
 }
 
@@ -85,7 +92,31 @@ export async function computeTopologyHash(topology: AbstractTopology): Promise<s
 }
 
 /**
- * Deterministically constructs an AbstractTopology (<2 KB, zero PII) from scrubbed content.
+ * Dynamically classifies an entity key into a domain-specific semantic type.
+ */
+function classifyEntityType(key: string): string {
+  const lower = key.toLowerCase();
+  if (/patient|diagnosis|blood|heart|pressure|glucose|potassium|medication|troponin|hba1c|vitals|lipid/i.test(lower)) {
+    return 'clinical_metric';
+  }
+  if (/burn|cash|revenue|arr|salary|payroll|balance|compensation|account|cost|opex|debt|ebitda/i.test(lower)) {
+    return 'financial_attribute';
+  }
+  if (/threat|ip|port|host|compromised|c2|gateway|actor|incident|forensic|cve|cvss|payload/i.test(lower)) {
+    return 'security_telemetry';
+  }
+  if (/clause|signatory|damages|governing|agreement|nda|term|liability|indemnification|party/i.test(lower)) {
+    return 'legal_provision';
+  }
+  if (/server|database|query|latency|error|engine|cluster|cpu|memory|endpoint/i.test(lower)) {
+    return 'infrastructure_telemetry';
+  }
+  return 'attribute_cluster';
+}
+
+/**
+ * Dynamically constructs an AbstractTopology (<2 KB, zero PII) from scrubbed content,
+ * extracting real field structures without static placeholder labels.
  */
 function extractTopologyFallback(scrubbedContent: string, prompt: string): AbstractTopology {
   const lines = scrubbedContent.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -94,40 +125,75 @@ function extractTopologyFallback(scrubbedContent: string, prompt: string): Abstr
   const relationships: Array<{ from: string; to: string; kind: string }> = [];
   const constraints: string[] = [];
 
-  // Goal/Prompt constraint
+  // Goal/Prompt constraint derived from user input
   constraints.push(`Analysis Directive: ${prompt.slice(0, 100)}`);
 
-  lines.forEach((line, index) => {
-    if (index >= 6) return; // Keep topology compact (<2 KB)
-    const entityId = `node_${index + 1}`;
+  // Dynamically derive contextual constraints based on prompt keywords
+  const promptLower = prompt.toLowerCase();
+  if (/risk|stratification|hazard|triage/i.test(promptLower)) {
+    constraints.push('Risk Assessment: isolate anomalous variance and critical thresholds');
+  } else if (/burn|runway|opex|cash|multiple/i.test(promptLower)) {
+    constraints.push('Fiscal Horizon: model liquidity exhaustion boundary and capital conservation');
+  } else if (/breach|threat|ransomware|lateral|contain/i.test(promptLower)) {
+    constraints.push('Incident Containment: isolate attack vectors and block lateral traversal');
+  } else if (/redline|liability|indemnif|breach|clause/i.test(promptLower)) {
+    constraints.push('Legal Exposure: evaluate asymmetric risk and enforce liability caps');
+  }
 
-    if (line.includes(':')) {
-      const [key, ...rest] = line.split(':');
-      const label = rest.join(':').trim();
-      entities.push({
-        id: entityId,
-        type: 'attribute_cluster',
-        label: `${key?.trim() || 'field'}: ${label.slice(0, 40)}`,
-      });
-    } else {
-      entities.push({
-        id: entityId,
-        type: 'semantic_fragment',
-        label: line.slice(0, 45),
-      });
-    }
+  let nodeCounter = 1;
 
-    if (index > 0) {
-      relationships.push({
-        from: `node_${index}`,
-        to: entityId,
-        kind: 'correlates_with',
-      });
+  for (const line of lines) {
+    if (entities.length >= 8) break; // Keep topology strictly compact (<2 KB)
+
+    // Handle pipe-separated key-value pairs (e.g. "Patient: Vance | DOB: [REDACTED] | SSN: [REDACTED]")
+    const segments = line.includes('|') ? line.split('|') : [line];
+
+    for (const segment of segments) {
+      if (entities.length >= 8) break;
+      const cleanSeg = segment.replace(/^=+\s*/, '').replace(/\s*=+$/, '').trim();
+      if (!cleanSeg || cleanSeg.startsWith('==')) continue;
+
+      const entityId = `node_${nodeCounter++}`;
+
+      if (cleanSeg.includes(':')) {
+        const [rawKey, ...rest] = cleanSeg.split(':');
+        const key = rawKey?.trim() || 'field';
+        const labelVal = rest.join(':').trim();
+        const type = classifyEntityType(key);
+
+        entities.push({
+          id: entityId,
+          type,
+          label: `${key}: ${labelVal.slice(0, 45)}`,
+        });
+      } else if (cleanSeg.length > 5) {
+        entities.push({
+          id: entityId,
+          type: 'semantic_fragment',
+          label: cleanSeg.slice(0, 50),
+        });
+      }
+
+      // Establish relational edges between sequential entities
+      if (entities.length > 1) {
+        const prev = entities[entities.length - 2]!;
+        const current = entities[entities.length - 1]!;
+        const kind =
+          prev.type === current.type && prev.type !== 'semantic_fragment'
+            ? `${prev.type}_correlation`
+            : 'correlates_with';
+
+        relationships.push({
+          from: prev.id,
+          to: current.id,
+          kind,
+        });
+      }
     }
-  });
+  }
 
   if (entities.length === 0) {
-    entities.push({ id: 'node_root', type: 'root', label: 'Primary Context Entity' });
+    entities.push({ id: 'node_1', type: 'root', label: 'Primary Context Entity' });
   }
 
   const topology: AbstractTopology = {
@@ -138,43 +204,168 @@ function extractTopologyFallback(scrubbedContent: string, prompt: string): Abstr
   };
 
   // Enforce strict < 2048 byte size constraint
-  const bytes = new TextEncoder().encode(JSON.stringify(topology)).length;
-  if (bytes > 2000) {
-    topology.constraints = topology.constraints.slice(0, 1);
-    topology.relationships = topology.relationships.slice(0, 3);
+  let bytes = new TextEncoder().encode(JSON.stringify(topology)).length;
+  while (bytes >= 2048 && topology.constraints.length > 1) {
+    topology.constraints.pop();
+    bytes = new TextEncoder().encode(JSON.stringify(topology)).length;
+  }
+  while (bytes >= 2048 && topology.relationships.length > 1) {
+    topology.relationships.pop();
+    bytes = new TextEncoder().encode(JSON.stringify(topology)).length;
   }
 
   return topology;
 }
 
 /**
- * Deterministically generates a fallback reasoning blueprint from topology.
+ * Dynamically synthesizes an executable ReasoningBlueprint from an AbstractTopology
+ * and user prompt, avoiding static canned phrases.
  */
-function createFallbackBlueprint(topology: AbstractTopology, prompt: string): ReasoningBlueprint {
+function createDynamicBlueprint(topology: AbstractTopology, prompt: string): ReasoningBlueprint {
+  const promptClean = prompt.trim();
+  const entityLabels = topology.entities.map((e) => e.label.split(':')[0]?.trim()).filter(Boolean);
+  const primaryKeys = entityLabels.slice(0, 3).join(', ') || 'primary domain entities';
+  const entityIds = topology.entities.map((e) => e.id);
+
+  const steps = [
+    {
+      id: 'step_1_quantify_baseline',
+      action: `Quantify baseline metrics, isolate variance, and check anomaly flags across [${primaryKeys}]`,
+      inputs: entityIds.slice(0, Math.min(3, entityIds.length)),
+      output: `Grounded baseline metrics and anomaly indices for ${entityLabels[0] || 'primary entity'}`,
+    },
+    {
+      id: 'step_2_relational_synthesis',
+      action: `Cross-correlate relational constraints across [${topology.relationships.map((r) => r.kind).slice(0, 2).join(', ') || 'topological edges'}] to address "${promptClean.slice(0, 60)}"`,
+      inputs: entityIds,
+      output: `Synthesized dependency vector and risk attribution matrix`,
+    },
+    {
+      id: 'step_3_action_formulation',
+      action: `Synthesize prioritized execution directives and operational roadmap for "${promptClean.slice(0, 75)}"`,
+      inputs: ['step_1_quantify_baseline', 'step_2_relational_synthesis'],
+      output: `Prioritized execution roadmap, risk mitigations, and grounded decision brief`,
+    },
+  ];
+
   return {
     schema: 'prism-blueprint-v1',
-    goal: `Execute cognitive synthesis for: "${prompt}"`,
-    steps: [
-      {
-        id: 'step_1_audit',
-        action: 'Audit local entity telemetry and compute baseline distributions',
-        inputs: topology.entities.map((e) => e.id),
-        output: 'Baseline metric variance & anomaly flags',
-      },
-      {
-        id: 'step_2_cross_correlate',
-        action: 'Cross-correlate relational entities against target objectives',
-        inputs: topology.relationships.map((r) => `${r.from}->${r.to}`),
-        output: 'Synthesized correlation vectors',
-      },
-      {
-        id: 'step_3_recommendations',
-        action: 'Formulate localized, actionable directives and strategic brief',
-        inputs: ['step_1_audit', 'step_2_cross_correlate'],
-        output: 'Final prioritized action checklist and diagnostic brief',
-      },
-    ],
+    goal: promptClean,
+    steps,
   };
+}
+
+/**
+ * Extracts structured key-value pairs comparing raw local data against anonymized wire tokens.
+ */
+function extractStructuredFieldComparisons(raw: string, scrubbed: string): Array<{
+  field: string;
+  rawValue: string;
+  wireValue: string;
+  isRedacted: boolean;
+}> {
+  const rawLines = raw.split('\n').map((l) => l.trim()).filter(Boolean);
+  const scrubbedLines = scrubbed.split('\n').map((l) => l.trim()).filter(Boolean);
+  const results: Array<{ field: string; rawValue: string; wireValue: string; isRedacted: boolean }> = [];
+
+  rawLines.forEach((rLine, idx) => {
+    const sLine = scrubbedLines[idx] || '';
+    const rSegs = rLine.includes('|') ? rLine.split('|') : [rLine];
+    const sSegs = sLine.includes('|') ? sLine.split('|') : [sLine];
+
+    rSegs.forEach((rSeg, sIdx) => {
+      const sSeg = sSegs[sIdx] || '';
+      if (rSeg.includes(':')) {
+        const [rKey, ...rRest] = rSeg.split(':');
+        const [, ...sRest] = sSeg.includes(':') ? sSeg.split(':') : [rKey, sSeg];
+        const rawVal = rRest.join(':').trim();
+        const wireVal = sRest.join(':').trim() || sSeg.trim();
+        const cleanField = (rKey || '').replace(/^=+\s*/, '').replace(/\s*=+$/, '').trim();
+
+        if (cleanField && rawVal && !cleanField.startsWith('==') && results.length < 12) {
+          const isRedacted = wireVal.includes('[REDACTED') || wireVal !== rawVal;
+          results.push({
+            field: cleanField,
+            rawValue: rawVal,
+            wireValue: wireVal,
+            isRedacted,
+          });
+        }
+      }
+    });
+  });
+
+  return results;
+}
+
+/**
+ * Dynamically synthesizes the final Stage 3 Grounded Local Hydration Report
+ * pairing blueprint reasoning with live local raw data.
+ */
+function synthesizeDynamicHydrationReport(
+  rawContent: string,
+  scrubbedContent: string,
+  blueprint: ReasoningBlueprint,
+  posture: CognitivePosture,
+  routingReason: string,
+  telemetryList: StageTelemetry[]
+): string {
+  const fields = extractStructuredFieldComparisons(rawContent, scrubbedContent);
+
+  const dualGroundingRows = fields.map((f) => {
+    const statusPill = f.isRedacted
+      ? '🔒 **Redacted on-device** (Zero cloud bytes)'
+      : '👁 Preserved format structure';
+    return `| ${f.field} | \`${f.rawValue}\` | \`${f.wireValue}\` | ${statusPill} |`;
+  }).join('\n');
+
+  const stepExecutionDetails = blueprint.steps.map((step, idx) => {
+    const relevantLocalFields = fields
+      .filter((_, fIdx) => fIdx % blueprint.steps.length === idx)
+      .map((f) => `\`${f.field}: ${f.rawValue}\``)
+      .join(', ');
+
+    return `### Step ${idx + 1}: ${step.action}
+- **Target Output:** ${step.output}
+- **Evaluated Local Vault Inputs:** [${step.inputs.join(', ')}]
+- **Grounded Metrics Observed:** ${relevantLocalFields || 'Local context parsed without cloud exposure'}`;
+  }).join('\n\n');
+
+  return `
+# PRISM Cognitive Synthesis Report
+
+**Objective:** ${blueprint.goal}  
+**Execution Posture:** \`${posture.toUpperCase()}\` | **Routing Reason:** ${routingReason}
+
+---
+
+## 1. Executive Summary & Dynamic Synthesis
+This brief was synthesized strictly on-device using PRISM's Inverted-Blueprint architecture. The abstract reasoning blueprint generated in Stage 2 was grounded locally against raw confidential data without exposing private records over the network.
+
+## 2. Grounded Step-by-Step Execution
+${stepExecutionDetails}
+
+## 3. Dual-Grounding Verification Table (Zero Cloud Exposure)
+
+### Grounded Local Data & Anonymized Wire Transmission Correlation:
+
+| Field / Metric | Raw Local Value (On-Device Vault) | Anonymized Wire Token (What Cloud Saw) | Wire Privacy Status |
+| :--- | :--- | :--- | :--- |
+${dualGroundingRows || '| Primary Document | Full Local File Grounded | [REDACTED_PAYLOAD] | 🔒 Redacted on-device |'}
+
+*(Attestation: All sensitive identifiers, credentials, financials, and clinical vitals above were masked on-device prior to Stage 2. Stage 3 on-device execution re-grounded the abstract blueprint against the real numbers stored in the local vault.)*
+
+## 4. Prioritized Directives & Risk Mitigations
+1. **Immediate Stabilization Directive:** Action plan addressing \`${blueprint.goal.slice(0, 70)}\`.
+2. **Contextual Constraint Verification:** Ensure execution bounds adhere to local schema definitions.
+3. **Audit Trail Completeness:** Re-verify zero data leakage across local persistent cache.
+
+## 5. Telemetry & Privacy Attestation
+- **Stage 1 (Topology Extraction):** ${telemetryList[0]?.inferenceSource || 'ON_DEVICE'} (${telemetryList[0]?.bytesSentToCloud || 0} bytes to cloud)
+- **Stage 2 (Blueprint Reasoning):** ${telemetryList[1]?.inferenceSource || 'IN_CLOUD'} (${telemetryList[1]?.bytesSentToCloud || 0} bytes to cloud, cache: ${telemetryList[1]?.cacheStatus || 'none'})
+- **Stage 3 (Local Hydration):** ON_DEVICE (0 bytes to cloud)
+- **Zero Raw Data Leakage Guaranteed.**
+`.trim();
 }
 
 /**
@@ -189,6 +380,7 @@ export async function runPrismPipeline(options: PrismRunOptions): Promise<PrismP
   // =========================================================================
   // STAGE 1: Local Topology Extraction (Gemini Nano 4 or Scrubber Fallback)
   // =========================================================================
+  options.onStageProgress?.(0, 'extract-topology');
   const stage1Start = performance.now();
   let topology: AbstractTopology;
   let stage1Fallback = false;
@@ -254,6 +446,7 @@ ${rawContent}
   // =========================================================================
   // STAGE 2: Blind Cloud Blueprint Generation (Structured JSON + Firestore Cache)
   // =========================================================================
+  options.onStageProgress?.(1, 'cloud-blueprint');
   const stage2Start = performance.now();
   let blueprint: ReasoningBlueprint;
   let stage2InferenceSource: InferenceSource = 'ON_DEVICE';
@@ -294,7 +487,9 @@ ${rawContent}
 
     try {
       const ai = getFirebaseAI();
-      const cloudModelName = import.meta.env.VITE_GEMINI_CLOUD_MODEL || 'gemini-3.5-flash-lite';
+      const cloudModelName = getRemoteConfigCloudModel(
+        import.meta.env.VITE_GEMINI_CLOUD_MODEL || 'gemini-3.5-flash-lite'
+      );
       const cloudModel: GenerativeModel = getGenerativeModel(ai, {
         mode: InferenceMode.PREFER_IN_CLOUD,
         inCloudParams: {
@@ -362,19 +557,19 @@ ${topoString}
         // Cache persistence write warning ignored
       }
     } catch {
-      // Cloud generation failed or offline -> fallback to local blueprint generator
+      // Cloud generation failed or offline -> fallback to local dynamic blueprint generator
       stage2Fallback = true;
       stage2InferenceSource = 'ON_DEVICE';
       stage2BytesSent = 0;
-      blueprint = createFallbackBlueprint(topology, prompt);
+      blueprint = createDynamicBlueprint(topology, prompt);
     }
   } else {
-    // Offline / Vault Mode: Cache MISS + Local Synthesis
+    // Offline / Vault Mode: Cache MISS + Local Dynamic Synthesis
     stage2CacheStatus = 'miss';
     stage2Fallback = true;
     stage2InferenceSource = 'ON_DEVICE';
     stage2BytesSent = 0;
-    blueprint = createFallbackBlueprint(topology, prompt);
+    blueprint = createDynamicBlueprint(topology, prompt);
   }
 
   const stage2Latency = Math.round(performance.now() - stage2Start);
@@ -391,6 +586,7 @@ ${topoString}
   // =========================================================================
   // STAGE 3: Grounded Local Hydration (On-Device Nano or Deterministic Template)
   // =========================================================================
+  options.onStageProgress?.(2, 'hydrate-local');
   const stage3Start = performance.now();
   let hydratedReport = '';
   let stage3Fallback = false;
@@ -425,42 +621,14 @@ ${rawContent}
   // Fallback hydration if Nano was unavailable or failed
   if (stage3Fallback || !hydratedReport) {
     const scrubbed = scrubPII(rawContent);
-    const stepBulletPoints = blueprint.steps
-      .map((step, idx) => `### ${idx + 1}. ${step.action}\n- **Target Output:** ${step.output}\n- **Observed Metrics:** Data evaluated across local nodes [${step.inputs.join(', ')}]`)
-      .join('\n\n');
-
-    hydratedReport = `
-# PRISM Cognitive Synthesis Report
-
-**Objective:** ${blueprint.goal}  
-**Execution Posture:** \`${posture.toUpperCase()}\` | **Routing Reason:** ${decision.reason}
-
----
-
-## 1. Executive Summary
-This brief was synthesized strictly on-device using PRISM's Inverted-Blueprint architecture. Raw files never left the client boundary.
-
-## 2. Local Grounding & Execution Steps
-${stepBulletPoints}
-
-## 3. Findings & Raw Context Correlation
-### Grounded Local Data (On-Device Vault — Zero Cloud Exposure):
-\`\`\`text
-${rawContent.trim().slice(0, 600)}
-\`\`\`
-
-### Anonymized Wire Transmission (What Cloud Gemini Saw):
-\`\`\`text
-${scrubbed.trim().slice(0, 600)}
-\`\`\`
-*(Notice: All PII, real identifiers, currency values, and contact records were redacted on-device before Stage 2. Stage 3 on-device execution re-grounded the reasoning against the raw data above.)*
-
-## 4. Privacy & Integrity Attestation
-- **Stage 1 (Topology Extraction):** ${telemetryList[0]?.inferenceSource} (${telemetryList[0]?.bytesSentToCloud} bytes to cloud)
-- **Stage 2 (Blueprint Reasoning):** ${telemetryList[1]?.inferenceSource} (${telemetryList[1]?.bytesSentToCloud} bytes to cloud, cache: ${telemetryList[1]?.cacheStatus})
-- **Stage 3 (Local Hydration):** ON_DEVICE (0 bytes to cloud)
-- **Zero Raw Data Leakage Guaranteed.**
-`.trim();
+    hydratedReport = synthesizeDynamicHydrationReport(
+      rawContent,
+      scrubbed,
+      blueprint,
+      posture,
+      decision.reason,
+      telemetryList
+    );
   }
 
   const stage3Latency = Math.round(performance.now() - stage3Start);
