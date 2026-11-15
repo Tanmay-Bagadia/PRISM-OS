@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "demo": "vite-node scripts/run-demo.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

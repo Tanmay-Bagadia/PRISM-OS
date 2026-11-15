@@ -276,32 +276,32 @@ ${rawContent}
         mode: InferenceMode.PREFER_IN_CLOUD,
         inCloudParams: {
           model: 'gemini-3.5-flash-lite',
-        },
-        generationConfig: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: SchemaType.OBJECT,
-            properties: {
-              schema: { type: SchemaType.STRING },
-              goal: { type: SchemaType.STRING },
-              steps: {
-                type: SchemaType.ARRAY,
-                items: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    id: { type: SchemaType.STRING },
-                    action: { type: SchemaType.STRING },
-                    inputs: {
-                      type: SchemaType.ARRAY,
-                      items: { type: SchemaType.STRING },
+          generationConfig: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: SchemaType.OBJECT,
+              properties: {
+                schema: { type: SchemaType.STRING },
+                goal: { type: SchemaType.STRING },
+                steps: {
+                  type: SchemaType.ARRAY,
+                  items: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                      id: { type: SchemaType.STRING },
+                      action: { type: SchemaType.STRING },
+                      inputs: {
+                        type: SchemaType.ARRAY,
+                        items: { type: SchemaType.STRING },
+                      },
+                      output: { type: SchemaType.STRING },
                     },
-                    output: { type: SchemaType.STRING },
+                    required: ['id', 'action', 'inputs', 'output'],
                   },
-                  required: ['id', 'action', 'inputs', 'output'],
                 },
               },
+              required: ['schema', 'goal', 'steps'],
             },
-            required: ['schema', 'goal', 'steps'],
           },
         },
       });
