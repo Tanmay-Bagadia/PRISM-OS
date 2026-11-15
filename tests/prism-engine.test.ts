@@ -25,6 +25,7 @@ import {
 } from '../src/lib/prism/nanoStatus';
 import { scrubPII } from '../src/lib/prism/scrubber';
 import { computeRoute, clampThresholds } from '../src/lib/prism/router';
+import { runPrismPipeline } from '../src/lib/prism/engine';
 
 describe('Shared contracts', () => {
   test('StageTelemetry has required fields', () => {
@@ -255,5 +256,108 @@ describe('Adaptive Router', () => {
     expect(clamped.minBatteryForCloud).toBeLessThanOrEqual(0.95);
     expect(clamped.minBatteryForCloud).toBeGreaterThanOrEqual(0.05);
     expect(clamped.maxRttForCloud).toBeGreaterThanOrEqual(100);
+  });
+});
+
+describe('PRISM 3-Stage Engine', () => {
+  const DEVICE: DeviceContext = {
+    batteryLevel: 0.9,
+    networkRttMs: 50,
+    nanoAvailable: false, // forces scrubber fallback in test env
+    online: false,        // forces offline/cache path
+  };
+
+  const THRESHOLDS: RemoteThresholds = {
+    minBatteryForCloud: 0.2,
+    maxRttForCloud: 2000,
+    vaultForceLocal: true,
+    frontierForceCloud: true,
+  };
+
+  const PII_INPUT = `
+    Patient: Jane Doe, SSN: 999-88-7777
+    Email: jane@example.com, Phone: (555) 123-4567
+    Revenue: $500,000.00
+  `;
+
+  test('Stage 1 topology contains zero PII when using scrubber fallback', async () => {
+    const result = await runPrismPipeline({
+      rawContent: PII_INPUT,
+      prompt: 'Analyze this patient record',
+      posture: 'vault',
+      device: DEVICE,
+      thresholds: THRESHOLDS,
+    });
+
+    const topoStr = JSON.stringify(result.topology);
+    expect(topoStr).not.toMatch(/Jane/i);
+    expect(topoStr).not.toMatch(/999-88-7777/);
+    expect(topoStr).not.toMatch(/jane@example\.com/);
+    expect(topoStr).not.toMatch(/555.*123.*4567/);
+    expect(topoStr).not.toMatch(/\$500,000/);
+    expect(result.telemetry[0].fallbackUsed).toBe(true);
+    expect(result.telemetry[0].bytesSentToCloud).toBe(0);
+  });
+
+  test('Stage 1 topology is under 2048 bytes', async () => {
+    const result = await runPrismPipeline({
+      rawContent: PII_INPUT,
+      prompt: 'Analyze',
+      posture: 'vault',
+      device: DEVICE,
+      thresholds: THRESHOLDS,
+    });
+
+    const topologyBytes = new TextEncoder().encode(JSON.stringify(result.topology)).length;
+    expect(topologyBytes).toBeLessThan(2048);
+  });
+
+  test('records accurate telemetry for all 3 stages', async () => {
+    const result = await runPrismPipeline({
+      rawContent: 'Simple medical metrics with test details',
+      prompt: 'Summarize clinical trends',
+      posture: 'vault',
+      device: DEVICE,
+      thresholds: THRESHOLDS,
+    });
+
+    expect(result.telemetry).toHaveLength(3);
+    expect(result.telemetry[0].stageName).toBe('extract-topology');
+    expect(result.telemetry[1].stageName).toBe('cloud-blueprint');
+    expect(result.telemetry[2].stageName).toBe('hydrate-local');
+
+    // Vault mode + offline → exactly 0 bytes sent to cloud across all 3 stages
+    for (const t of result.telemetry) {
+      expect(t.bytesSentToCloud).toBe(0);
+      expect(typeof t.latencyMs).toBe('number');
+      expect(t.latencyMs).toBeGreaterThanOrEqual(0);
+      expect(t.payloadPreview).toBeDefined();
+    }
+  });
+
+  test('Stage 2 reports cache status when offline', async () => {
+    const result = await runPrismPipeline({
+      rawContent: 'Corporate financial summary and quarterly balance sheet',
+      prompt: 'Analyze growth trajectory',
+      posture: 'balanced',
+      device: { ...DEVICE, online: false },
+      thresholds: THRESHOLDS,
+    });
+
+    expect(['hit', 'miss']).toContain(result.telemetry[1].cacheStatus);
+  });
+
+  test('output contains a non-empty hydrated markdown report', async () => {
+    const result = await runPrismPipeline({
+      rawContent: 'Patient heart rate: 72 bpm, blood pressure: 120/80',
+      prompt: 'Provide diagnostic summary',
+      posture: 'vault',
+      device: DEVICE,
+      thresholds: THRESHOLDS,
+    });
+
+    expect(result.hydratedReport.length).toBeGreaterThan(0);
+    expect(typeof result.hydratedReport).toBe('string');
+    expect(result.hydratedReport).toContain('#');
   });
 });
