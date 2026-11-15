@@ -23,6 +23,7 @@ import {
   checkNanoAvailability,
   monitorNanoDownload,
 } from '../src/lib/prism/nanoStatus';
+import { scrubPII } from '../src/lib/prism/scrubber';
 
 describe('Shared contracts', () => {
   test('StageTelemetry has required fields', () => {
@@ -113,5 +114,70 @@ describe('Nano status monitor', () => {
     const unsubscribe = monitorNanoDownload(callback);
     expect(typeof unsubscribe).toBe('function');
     unsubscribe();
+  });
+});
+
+describe('PII Scrubber', () => {
+  const RAW_WITH_PII = `
+    Patient: John Smith, DOB: 03/15/1985
+    SSN: 123-45-6789, Phone: (555) 867-5309
+    Email: john.smith@example.com
+    Credit Card: 4111-1111-1111-1111
+    Address: 123 Main St, Springfield, IL 62704
+    Revenue: $1,234,567.89
+    IP: 192.168.1.100
+  `;
+
+  test('removes all email addresses', () => {
+    const scrubbed = scrubPII(RAW_WITH_PII);
+    expect(scrubbed).not.toMatch(/john\.smith@example\.com/);
+    expect(scrubbed).toMatch(/\[EMAIL_REDACTED\]/);
+  });
+
+  test('removes all SSN patterns', () => {
+    const scrubbed = scrubPII(RAW_WITH_PII);
+    expect(scrubbed).not.toMatch(/123-45-6789/);
+    expect(scrubbed).toMatch(/\[SSN_REDACTED\]/);
+  });
+
+  test('removes all phone numbers', () => {
+    const scrubbed = scrubPII(RAW_WITH_PII);
+    expect(scrubbed).not.toMatch(/555.*867.*5309/);
+    expect(scrubbed).toMatch(/\[PHONE_REDACTED\]/);
+  });
+
+  test('removes credit card numbers', () => {
+    const scrubbed = scrubPII(RAW_WITH_PII);
+    expect(scrubbed).not.toMatch(/4111/);
+    expect(scrubbed).toMatch(/\[CC_REDACTED\]/);
+  });
+
+  test('removes dollar amounts', () => {
+    const scrubbed = scrubPII(RAW_WITH_PII);
+    expect(scrubbed).not.toMatch(/\$1,234,567\.89/);
+    expect(scrubbed).toMatch(/\[AMOUNT_REDACTED\]/);
+  });
+
+  test('removes IP addresses', () => {
+    const scrubbed = scrubPII(RAW_WITH_PII);
+    expect(scrubbed).not.toMatch(/192\.168\.1\.100/);
+    expect(scrubbed).toMatch(/\[IP_REDACTED\]/);
+  });
+
+  test('removes date-of-birth patterns', () => {
+    const scrubbed = scrubPII(RAW_WITH_PII);
+    expect(scrubbed).not.toMatch(/03\/15\/1985/);
+    expect(scrubbed).toMatch(/\[DATE_REDACTED\]/);
+  });
+
+  test('is deterministic — same input always produces same output', () => {
+    const a = scrubPII(RAW_WITH_PII);
+    const b = scrubPII(RAW_WITH_PII);
+    expect(a).toBe(b);
+  });
+
+  test('preserves non-PII text structure', () => {
+    const scrubbed = scrubPII('The quick brown fox jumps over the lazy dog.');
+    expect(scrubbed).toBe('The quick brown fox jumps over the lazy dog.');
   });
 });
