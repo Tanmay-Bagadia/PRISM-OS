@@ -20,7 +20,7 @@ import {
 } from '../src/lib/prism/nanoStatus';
 import { scrubPII } from '../src/lib/prism/scrubber';
 import { computeRoute, clampThresholds } from '../src/lib/prism/router';
-import { runPrismPipeline } from '../src/lib/prism/engine';
+import { runPrismPipeline, parseCleanJson } from '../src/lib/prism/engine';
 
 describe('Shared contracts', () => {
   test('StageTelemetry has required fields', () => {
@@ -104,6 +104,64 @@ describe('Nano status monitor', () => {
     // In test env (jsdom), Chrome AI is not present by default
     expect(result.supported).toBe(false);
     expect(result.status).toBe('unavailable');
+  });
+
+  test('recognizes Chrome 138+ "available" return value as status: available', async () => {
+    const originalAi = (window as unknown as { ai?: unknown }).ai;
+    try {
+      (window as unknown as { ai: { languageModel: { availability: () => Promise<string> } } }).ai = {
+        languageModel: {
+          availability: vi.fn().mockResolvedValue('available'),
+        },
+      };
+      const result = await checkNanoAvailability();
+      expect(result.supported).toBe(true);
+      expect(result.status).toBe('available');
+      expect(result.downloadProgress).toBe(1.0);
+    } finally {
+      if (originalAi === undefined) {
+        delete (window as unknown as { ai?: unknown }).ai;
+      } else {
+        (window as unknown as { ai: unknown }).ai = originalAi;
+      }
+    }
+  });
+
+  test('recognizes Chrome 138+ "downloadable" and "downloading" as status: downloading', async () => {
+    const originalLM = (window as unknown as { LanguageModel?: unknown }).LanguageModel;
+    try {
+      (window as unknown as { LanguageModel: { availability: () => Promise<string> } }).LanguageModel = {
+        availability: vi.fn().mockResolvedValue('downloadable'),
+      };
+      const result = await checkNanoAvailability();
+      expect(result.supported).toBe(true);
+      expect(result.status).toBe('downloading');
+      expect(result.downloadProgress).toBe(0.1);
+    } finally {
+      if (originalLM === undefined) {
+        delete (window as unknown as { LanguageModel?: unknown }).LanguageModel;
+      } else {
+        (window as unknown as { LanguageModel: unknown }).LanguageModel = originalLM;
+      }
+    }
+  });
+
+  test('recognizes self.LanguageModel scope', async () => {
+    const originalLM = (self as unknown as { LanguageModel?: unknown }).LanguageModel;
+    try {
+      (self as unknown as { LanguageModel: { availability: () => Promise<string> } }).LanguageModel = {
+        availability: vi.fn().mockResolvedValue('readily'),
+      };
+      const result = await checkNanoAvailability();
+      expect(result.supported).toBe(true);
+      expect(result.status).toBe('available');
+    } finally {
+      if (originalLM === undefined) {
+        delete (self as unknown as { LanguageModel?: unknown }).LanguageModel;
+      } else {
+        (self as unknown as { LanguageModel: unknown }).LanguageModel = originalLM;
+      }
+    }
   });
 
   test('monitorNanoDownload provides unsubscribe and emits updates', () => {
@@ -342,7 +400,7 @@ describe('PRISM 3-Stage Engine', () => {
     expect(['hit', 'miss']).toContain(result.telemetry[1].cacheStatus);
   });
 
-  test('output contains a non-empty hydrated markdown report', async () => {
+  test('output contains a non-empty hydrated markdown report with dual local/wire correlation', async () => {
     const result = await runPrismPipeline({
       rawContent: 'Patient heart rate: 72 bpm, blood pressure: 120/80',
       prompt: 'Provide diagnostic summary',
@@ -354,6 +412,28 @@ describe('PRISM 3-Stage Engine', () => {
     expect(result.hydratedReport.length).toBeGreaterThan(0);
     expect(typeof result.hydratedReport).toBe('string');
     expect(result.hydratedReport).toContain('#');
+    expect(result.hydratedReport).toContain('Grounded Local Data');
+    expect(result.hydratedReport).toContain('Anonymized Wire Transmission');
+  });
+
+  describe('parseCleanJson utility', () => {
+    test('parses pure JSON string', () => {
+      const parsed = parseCleanJson<{ a: number }>('{"a": 42}');
+      expect(parsed).toEqual({ a: 42 });
+    });
+
+    test('strips ```json ... ``` code fences', () => {
+      const raw = '```json\n{\n  "schema": "prism-blueprint-v1",\n  "steps": []\n}\n```';
+      const parsed = parseCleanJson<{ schema: string; steps: unknown[] }>(raw);
+      expect(parsed.schema).toBe('prism-blueprint-v1');
+      expect(parsed.steps).toEqual([]);
+    });
+
+    test('strips generic ``` fences with commentary before and after', () => {
+      const raw = 'Here is the topology result:\n```\n{"entities":[{"id":"1","type":"a","label":"b"}]}\n```\nEnjoy!';
+      const parsed = parseCleanJson<{ entities: Array<{ id: string }> }>(raw);
+      expect(parsed.entities[0]?.id).toBe('1');
+    });
   });
 
   describe('Multi-Domain Scenario Zero-Leakage & Synthesis Tests', () => {

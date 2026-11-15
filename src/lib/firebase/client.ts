@@ -19,7 +19,6 @@ import {
 import {
   initializeAppCheck,
   ReCaptchaEnterpriseProvider,
-  CustomProvider,
   type AppCheck,
 } from 'firebase/app-check';
 import {
@@ -131,6 +130,11 @@ export function setupAppCheck(): AppCheck | null {
   if (appCheckInstance) return appCheckInstance;
   if (typeof window === 'undefined') return null;
 
+  const recaptchaKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
+  if (!recaptchaKey) {
+    return null;
+  }
+
   const app = getFirebaseApp();
   const debugToken = import.meta.env.VITE_APPCHECK_DEBUG_TOKEN;
 
@@ -140,26 +144,11 @@ export function setupAppCheck(): AppCheck | null {
       debugToken === 'true' ? true : debugToken;
   }
 
-  const recaptchaKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
   try {
-    if (recaptchaKey) {
-      appCheckInstance = initializeAppCheck(app, {
-        provider: new ReCaptchaEnterpriseProvider(recaptchaKey),
-        isTokenAutoRefreshEnabled: true,
-      });
-    } else {
-      // In test/dev environments without a reCAPTCHA key, provide a lightweight custom provider
-      appCheckInstance = initializeAppCheck(app, {
-        provider: new CustomProvider({
-          getToken: () =>
-            Promise.resolve({
-              token: 'debug-token-prism-os',
-              expireTimeMillis: Date.now() + 3600000,
-            }),
-        }),
-        isTokenAutoRefreshEnabled: true,
-      });
-    }
+    appCheckInstance = initializeAppCheck(app, {
+      provider: new ReCaptchaEnterpriseProvider(recaptchaKey),
+      isTokenAutoRefreshEnabled: true,
+    });
   } catch {
     // App check already initialized or not supported in this runtime
   }

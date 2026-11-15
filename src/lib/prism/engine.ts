@@ -34,6 +34,25 @@ export interface PrismRunOptions {
 }
 
 /**
+ * Safely parses JSON strings returned by LLMs, stripping markdown fences
+ * (e.g. ```json ... ```) and extracting JSON objects or arrays.
+ */
+export function parseCleanJson<T>(raw: string): T {
+  let cleaned = raw.trim();
+  // Strip markdown code fences if present
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
+  }
+  // Extract content between first { or [ and last } or ]
+  const firstBrace = cleaned.search(/[\{\[]/);
+  const lastBrace = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'));
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
+    cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+  }
+  return JSON.parse(cleaned) as T;
+}
+
+/**
  * Computes a deterministic SHA-256 hash string for an Abstract Topology.
  */
 export async function computeTopologyHash(topology: AbstractTopology): Promise<string> {
@@ -192,9 +211,12 @@ ${rawContent}
       const result = await nanoModel.generateContent(extractionPrompt);
       stage1InferenceSource = (result.response.inferenceSource as InferenceSource) || 'ON_DEVICE';
       const text = result.response.text();
-      const parsed = JSON.parse(text) as AbstractTopology;
-      if (parsed.schema === 'prism-topology-v1' && Array.isArray(parsed.entities)) {
-        topology = parsed;
+      const parsed = parseCleanJson<Partial<AbstractTopology>>(text);
+      if (Array.isArray(parsed.entities)) {
+        parsed.schema = 'prism-topology-v1';
+        parsed.relationships = Array.isArray(parsed.relationships) ? parsed.relationships : [];
+        parsed.constraints = Array.isArray(parsed.constraints) ? parsed.constraints : [];
+        topology = parsed as AbstractTopology;
       } else {
         throw new Error('Invalid topology schema from Nano');
       }
@@ -272,10 +294,11 @@ ${rawContent}
 
     try {
       const ai = getFirebaseAI();
+      const cloudModelName = import.meta.env.VITE_GEMINI_CLOUD_MODEL || 'gemini-3.5-flash-lite';
       const cloudModel: GenerativeModel = getGenerativeModel(ai, {
         mode: InferenceMode.PREFER_IN_CLOUD,
         inCloudParams: {
-          model: 'gemini-3.5-flash-lite',
+          model: cloudModelName,
           generationConfig: {
             responseMimeType: 'application/json',
             responseSchema: {
@@ -310,6 +333,7 @@ ${rawContent}
 You are the PRISM Cloud Blueprint Reasoner.
 You are given an abstract entity/relationship topology with zero PII or raw numbers.
 Formulate a structured Reasoning Blueprint to achieve the goal: "${prompt}".
+You MUST set "schema": "prism-blueprint-v1" in the output JSON.
 Topology:
 ${topoString}
 `;
@@ -317,10 +341,12 @@ ${topoString}
       stage2InferenceSource = (result.response.inferenceSource as InferenceSource) || 'IN_CLOUD';
 
       const jsonText = result.response.text();
-      const parsed = JSON.parse(jsonText) as ReasoningBlueprint;
+      const parsed = parseCleanJson<Partial<ReasoningBlueprint>>(jsonText);
 
-      if (parsed.schema === 'prism-blueprint-v1' && Array.isArray(parsed.steps)) {
-        blueprint = parsed;
+      if (Array.isArray(parsed.steps)) {
+        parsed.schema = 'prism-blueprint-v1';
+        parsed.goal = parsed.goal || prompt;
+        blueprint = parsed as ReasoningBlueprint;
       } else {
         throw new Error('Cloud returned unexpected blueprint schema');
       }
@@ -418,10 +444,16 @@ This brief was synthesized strictly on-device using PRISM's Inverted-Blueprint a
 ${stepBulletPoints}
 
 ## 3. Findings & Raw Context Correlation
-Based on local analysis of the provided data:
+### Grounded Local Data (On-Device Vault — Zero Cloud Exposure):
 \`\`\`text
-${scrubbed.slice(0, 500)}
+${rawContent.trim().slice(0, 600)}
 \`\`\`
+
+### Anonymized Wire Transmission (What Cloud Gemini Saw):
+\`\`\`text
+${scrubbed.trim().slice(0, 600)}
+\`\`\`
+*(Notice: All PII, real identifiers, currency values, and contact records were redacted on-device before Stage 2. Stage 3 on-device execution re-grounded the reasoning against the raw data above.)*
 
 ## 4. Privacy & Integrity Attestation
 - **Stage 1 (Topology Extraction):** ${telemetryList[0]?.inferenceSource} (${telemetryList[0]?.bytesSentToCloud} bytes to cloud)

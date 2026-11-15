@@ -1,8 +1,17 @@
 import type { NanoAvailability } from '../../types/prism';
 
+type ChromeLMStatus =
+  | 'readily'
+  | 'after-download'
+  | 'no'
+  | 'available'
+  | 'downloadable'
+  | 'downloading'
+  | 'unavailable';
+
 interface ChromeLanguageModelFactory {
-  availability?: () => Promise<'readily' | 'after-download' | 'no'>;
-  capabilities?: () => Promise<{ available: 'readily' | 'after-download' | 'no' }>;
+  availability?: () => Promise<ChromeLMStatus>;
+  capabilities?: () => Promise<{ available: ChromeLMStatus }>;
   create?: (options?: {
     monitor?: (monitor: {
       addEventListener: (
@@ -22,9 +31,10 @@ interface WindowWithAI {
 
 /**
  * Checks whether Chrome Built-in AI (Gemini Nano) is available, downloading, or unavailable.
+ * Supports Chrome 128+ legacy status strings and Chrome 138+ standard status strings.
  */
 export async function checkNanoAvailability(): Promise<NanoAvailability> {
-  if (typeof window === 'undefined') {
+  if (typeof window === 'undefined' && typeof self === 'undefined') {
     return {
       supported: false,
       status: 'unavailable',
@@ -33,8 +43,9 @@ export async function checkNanoAvailability(): Promise<NanoAvailability> {
     };
   }
 
-  const win = window as unknown as WindowWithAI;
-  const lm = win.ai?.languageModel || win.LanguageModel;
+  const globalScope = (typeof self !== 'undefined' ? self : window) as unknown as WindowWithAI;
+  const win = (typeof window !== 'undefined' ? window : self) as unknown as WindowWithAI;
+  const lm = win.ai?.languageModel || win.LanguageModel || globalScope.LanguageModel;
 
   if (!lm) {
     return {
@@ -46,7 +57,7 @@ export async function checkNanoAvailability(): Promise<NanoAvailability> {
   }
 
   try {
-    let rawStatus: 'readily' | 'after-download' | 'no' = 'no';
+    let rawStatus: ChromeLMStatus = 'no';
 
     if (typeof lm.availability === 'function') {
       rawStatus = await lm.availability();
@@ -55,13 +66,17 @@ export async function checkNanoAvailability(): Promise<NanoAvailability> {
       rawStatus = caps.available;
     }
 
-    if (rawStatus === 'readily') {
+    if (rawStatus === 'readily' || rawStatus === 'available') {
       return {
         supported: true,
         status: 'available',
         downloadProgress: 1.0,
       };
-    } else if (rawStatus === 'after-download') {
+    } else if (
+      rawStatus === 'after-download' ||
+      rawStatus === 'downloadable' ||
+      rawStatus === 'downloading'
+    ) {
       return {
         supported: true,
         status: 'downloading',
@@ -103,8 +118,9 @@ export function monitorNanoDownload(
 
     // If downloading, begin polling or listening to model download progress
     if (initial.status === 'downloading') {
-      const win = typeof window !== 'undefined' ? (window as unknown as WindowWithAI) : null;
-      const lm = win?.ai?.languageModel || win?.LanguageModel;
+      const globalScope = (typeof self !== 'undefined' ? self : window) as unknown as WindowWithAI;
+      const win = (typeof window !== 'undefined' ? window : self) as unknown as WindowWithAI;
+      const lm = win?.ai?.languageModel || win?.LanguageModel || globalScope?.LanguageModel;
 
       if (lm?.create) {
         try {
