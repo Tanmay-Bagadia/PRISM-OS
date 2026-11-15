@@ -24,6 +24,7 @@ import {
   monitorNanoDownload,
 } from '../src/lib/prism/nanoStatus';
 import { scrubPII } from '../src/lib/prism/scrubber';
+import { computeRoute, clampThresholds } from '../src/lib/prism/router';
 
 describe('Shared contracts', () => {
   test('StageTelemetry has required fields', () => {
@@ -179,5 +180,80 @@ describe('PII Scrubber', () => {
   test('preserves non-PII text structure', () => {
     const scrubbed = scrubPII('The quick brown fox jumps over the lazy dog.');
     expect(scrubbed).toBe('The quick brown fox jumps over the lazy dog.');
+  });
+});
+
+describe('Adaptive Router', () => {
+  const DEFAULTS: RemoteThresholds = {
+    minBatteryForCloud: 0.2,
+    maxRttForCloud: 2000,
+    vaultForceLocal: true,
+    frontierForceCloud: true,
+  };
+
+  const GOOD_DEVICE: DeviceContext = {
+    batteryLevel: 0.8,
+    networkRttMs: 100,
+    nanoAvailable: true,
+    online: true,
+  };
+
+  test('Vault mode forces local-only even with good connectivity', () => {
+    const decision = computeRoute('vault', GOOD_DEVICE, DEFAULTS);
+    expect(decision.effectivePosture).toBe('vault');
+    expect(decision.useNano).toBe(true);
+    expect(decision.useCloud).toBe(false);
+  });
+
+  test('Frontier mode uses cloud when online and battery sufficient', () => {
+    const decision = computeRoute('frontier', GOOD_DEVICE, DEFAULTS);
+    expect(decision.effectivePosture).toBe('frontier');
+    expect(decision.useCloud).toBe(true);
+  });
+
+  test('Frontier downgrades to balanced when battery is low', () => {
+    const lowBattery: DeviceContext = { ...GOOD_DEVICE, batteryLevel: 0.1 };
+    const decision = computeRoute('frontier', lowBattery, DEFAULTS);
+    expect(decision.effectivePosture).toBe('balanced');
+    expect(decision.reason).toContain('battery');
+  });
+
+  test('Frontier downgrades to balanced when RTT is high', () => {
+    const highRtt: DeviceContext = { ...GOOD_DEVICE, networkRttMs: 5000 };
+    const decision = computeRoute('frontier', highRtt, DEFAULTS);
+    expect(decision.effectivePosture).toBe('balanced');
+    expect(decision.reason).toContain('RTT');
+  });
+
+  test('Balanced uses cloud for Stage 2 when conditions are good', () => {
+    const decision = computeRoute('balanced', GOOD_DEVICE, DEFAULTS);
+    expect(decision.useCloud).toBe(true);
+    expect(decision.useNano).toBe(true);
+  });
+
+  test('Balanced falls back to local-only when offline', () => {
+    const offline: DeviceContext = { ...GOOD_DEVICE, online: false };
+    const decision = computeRoute('balanced', offline, DEFAULTS);
+    expect(decision.useCloud).toBe(false);
+    expect(decision.reason).toContain('offline');
+  });
+
+  test('Uses scrubber fallback when nano is unavailable', () => {
+    const noNano: DeviceContext = { ...GOOD_DEVICE, nanoAvailable: false };
+    const decision = computeRoute('balanced', noNano, DEFAULTS);
+    expect(decision.useNano).toBe(false);
+  });
+
+  test('clampThresholds clamps extreme values to sane ranges', () => {
+    const extreme: RemoteThresholds = {
+      minBatteryForCloud: 1.5,
+      maxRttForCloud: -100,
+      vaultForceLocal: true,
+      frontierForceCloud: true,
+    };
+    const clamped = clampThresholds(extreme);
+    expect(clamped.minBatteryForCloud).toBeLessThanOrEqual(0.95);
+    expect(clamped.minBatteryForCloud).toBeGreaterThanOrEqual(0.05);
+    expect(clamped.maxRttForCloud).toBeGreaterThanOrEqual(100);
   });
 });
