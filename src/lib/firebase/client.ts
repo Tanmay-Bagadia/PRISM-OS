@@ -1,4 +1,4 @@
-import { initializeApp, getApps, getApp, type FirebaseApp, type FirebaseOptions } from 'firebase/app';
+import { initializeApp, getApps, type FirebaseApp, type FirebaseOptions } from 'firebase/app';
 import {
   getAI,
   GoogleAIBackend,

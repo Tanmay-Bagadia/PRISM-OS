@@ -37,7 +37,7 @@ export function computeRoute(
   const useNano = device.nanoAvailable;
 
   // 1. Vault Mode: Absolute Privacy Guarantee
-  if (posture === 'vault' || config.vaultForceLocal && posture === 'vault') {
+  if (posture === 'vault') {
     return {
       effectivePosture: 'vault',
       useNano,

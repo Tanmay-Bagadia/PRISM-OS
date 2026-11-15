@@ -1,4 +1,4 @@
-import type { NanoAvailability, NanoDownloadStatus } from '../../types/prism';
+import type { NanoAvailability } from '../../types/prism';
 
 interface ChromeLanguageModelFactory {
   availability?: () => Promise<'readily' | 'after-download' | 'no'>;

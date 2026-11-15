@@ -2,12 +2,7 @@ import { describe, test, expect, vi } from 'vitest';
 import type {
   CognitivePosture,
   StageTelemetry,
-  AbstractTopology,
-  ReasoningBlueprint,
-  ScenarioFile,
   PrismPipelineOutput,
-  NanoAvailability,
-  RouterDecision,
   DeviceContext,
   RemoteThresholds,
 } from '../src/types/prism';
