@@ -355,4 +355,126 @@ describe('PRISM 3-Stage Engine', () => {
     expect(typeof result.hydratedReport).toBe('string');
     expect(result.hydratedReport).toContain('#');
   });
+
+  describe('Multi-Domain Scenario Zero-Leakage & Synthesis Tests', () => {
+    test('Scenario: Startup CFO / Financial Diligence', async () => {
+      const CFO_DATA = `
+CONFIDENTIAL SERIES B BOARD REPORT
+Company: Apex Robotics Inc.
+CFO: Robert Sterling (robert@apex-robotics.co, Direct: 555-829-1049)
+Current Cash in Silicon Valley Bank: $8,450,000.00
+Wire Routing: 121000358, Account: 4111-9876-5432-1098
+Monthly Net Burn: $420,000.00
+ARR: $3,600,000.00 (84% YoY growth)
+Key Risk: Payroll obligations of $310,000.00 due on 12/01/2026.
+`;
+      const result = await runPrismPipeline({
+        rawContent: CFO_DATA,
+        prompt: 'Calculate burn multiple, runway extinction date, and prioritize OPEX reductions',
+        posture: 'vault',
+        device: DEVICE,
+        thresholds: THRESHOLDS,
+      });
+
+      const topoStr = JSON.stringify(result.topology);
+      // Verify zero sensitive financial data leaked to topology
+      expect(topoStr).not.toMatch(/\$8,450,000/);
+      expect(topoStr).not.toMatch(/\$420,000/);
+      expect(topoStr).not.toMatch(/\$3,600,000/);
+      expect(topoStr).not.toMatch(/robert@apex-robotics\.co/);
+      expect(topoStr).not.toMatch(/4111-9876/);
+      expect(topoStr).not.toMatch(/12\/01\/2026/);
+      expect(result.telemetry[0].bytesSentToCloud).toBe(0);
+      expect(new TextEncoder().encode(topoStr).length).toBeLessThan(2048);
+      expect(result.hydratedReport).toContain('Executive Summary');
+    });
+
+    test('Scenario: NDA Redliner / Legal Contract', async () => {
+      const LEGAL_DATA = `
+MUTUAL NON-DISCLOSURE & PROPRIETARY RIGHTS AGREEMENT
+Disclosing Party: BioNexus Therapeutics, Inc.
+Receiving Party: Quantum Horizon Technologies LLC
+Signatory: Elena Rostova (elena.rostova@bionexus-tx.com)
+Execution Date: 11/15/2026 | Effective Term: 5 years
+Liquidated Damages Clause: Breach incurs immediate statutory penalty of $5,000,000.00.
+Governing Law: State of Delaware Court of Chancery
+Phone: (555) 302-8492
+`;
+      const result = await runPrismPipeline({
+        rawContent: LEGAL_DATA,
+        prompt: 'Identify asymmetric liability clauses, IP transfer risks, and propose redlines',
+        posture: 'balanced',
+        device: { ...DEVICE, online: false },
+        thresholds: THRESHOLDS,
+      });
+
+      const topoStr = JSON.stringify(result.topology);
+      expect(topoStr).not.toMatch(/\$5,000,000/);
+      expect(topoStr).not.toMatch(/elena\.rostova@bionexus-tx\.com/);
+      expect(topoStr).not.toMatch(/11\/15\/2026/);
+      expect(topoStr).not.toMatch(/555.*302.*8492/);
+      expect(result.telemetry[0].bytesSentToCloud).toBe(0);
+      expect(new TextEncoder().encode(topoStr).length).toBeLessThan(2048);
+      expect(result.hydratedReport.length).toBeGreaterThan(100);
+    });
+
+    test('Scenario: Cybersecurity Threat Forensic Log', async () => {
+      const CYBER_DATA = `
+SECURITY OPERATIONS CENTER - INCIDENT #SEC-2026-9901
+Severity: Critical (CVSS 9.8)
+Compromised Host IP: 192.168.1.105
+C2 Gateway IP: 10.200.4.12
+Breached Identity: admin.root@internal-cluster.corp
+Detected Timestamp: 10/24/2026
+Extradited Data: Internal customer credit cards (4111-0000-1111-2222)
+Unauthorized Wire Transfer Initiated: $1,250,000.00
+`;
+      const result = await runPrismPipeline({
+        rawContent: CYBER_DATA,
+        prompt: 'Isolate root attack vector, trace lateral movement, and generate containment runbook',
+        posture: 'vault',
+        device: DEVICE,
+        thresholds: THRESHOLDS,
+      });
+
+      const topoStr = JSON.stringify(result.topology);
+      expect(topoStr).not.toMatch(/192\.168\.1\.105/);
+      expect(topoStr).not.toMatch(/10\.200\.4\.12/);
+      expect(topoStr).not.toMatch(/admin\.root@internal-cluster\.corp/);
+      expect(topoStr).not.toMatch(/4111-0000/);
+      expect(topoStr).not.toMatch(/\$1,250,000/);
+      expect(result.telemetry[0].bytesSentToCloud).toBe(0);
+      expect(result.hydratedReport).toContain('PRISM Cognitive Synthesis Report');
+    });
+
+    test('Scenario: HR Executive Compensation & Grievance', async () => {
+      const HR_DATA = `
+STRICTLY CONFIDENTIAL - EXECUTIVE REMUNERATION & GRIEVANCE
+Employee Name: Marcus Aurelius Holloway
+SSN: 771-40-9281 | DOB: 09/21/1979
+Base Salary: $385,000.00 | Performance Bonus: $150,000.00
+Grievance Filed By: whistle.blower@secure-reporting.org
+Direct Telephone: (555) 918-2041
+Allegation Date: 08/14/2026
+Settlement Offer Demanded: $750,000.00
+`;
+      const result = await runPrismPipeline({
+        rawContent: HR_DATA,
+        prompt: 'Evaluate corporate legal exposure, compliance violations, and recommend settlement range',
+        posture: 'vault',
+        device: DEVICE,
+        thresholds: THRESHOLDS,
+      });
+
+      const topoStr = JSON.stringify(result.topology);
+      expect(topoStr).not.toMatch(/771-40-9281/);
+      expect(topoStr).not.toMatch(/09\/21\/1979/);
+      expect(topoStr).not.toMatch(/\$385,000/);
+      expect(topoStr).not.toMatch(/\$150,000/);
+      expect(topoStr).not.toMatch(/\$750,000/);
+      expect(topoStr).not.toMatch(/whistle\.blower@secure-reporting\.org/);
+      expect(result.telemetry[0].bytesSentToCloud).toBe(0);
+      expect(new TextEncoder().encode(topoStr).length).toBeLessThan(2048);
+    });
+  });
 });
