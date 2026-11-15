@@ -16,7 +16,7 @@ interface HydratedOutputLaneProps {
   stage3Telemetry?: StageTelemetry;
   isRunning: boolean;
   activeStageIndex: number;
-  onFollowUpOffline: () => void;
+  onFollowUpOffline: (customPrompt?: string) => void;
   isOfflineMode: boolean;
 }
 
@@ -29,6 +29,7 @@ export const HydratedOutputLane: React.FC<HydratedOutputLaneProps> = ({
   isOfflineMode,
 }) => {
   const [copied, setCopied] = React.useState(false);
+  const [followUpQuestion, setFollowUpQuestion] = React.useState('');
 
   const handleCopy = () => {
     if (!hydratedReport) return;
@@ -281,27 +282,39 @@ export const HydratedOutputLane: React.FC<HydratedOutputLaneProps> = ({
 
       {/* Offline Follow-Up Action Footer */}
       {hydratedReport && (
-        <div className="p-3 bg-[#0d121c] border-t border-white/[0.08]">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
-            <div className="text-[11px] text-zinc-400">
-              <span className="font-semibold text-zinc-200">Demonstrate Offline Cache:</span>
-              <p className="text-[10px] text-zinc-500">
-                Re-runs with network disabled to verify instant (~63ms) Firestore SHA-256 blueprint hit.
-              </p>
-            </div>
+        <div className="p-3 bg-[#0d121c] border-t border-white/[0.08] space-y-2">
+          <div className="flex items-center justify-between text-[11px] text-zinc-400 font-mono">
+            <span className="font-semibold text-zinc-200 flex items-center gap-1.5">
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <span>Offline Follow-Up Query (63ms Firestore Cache Hit)</span>
+            </span>
+            <span className="text-[10px] text-zinc-500">Air-Gapped • Local Hydration</span>
+          </div>
 
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={followUpQuestion}
+              onChange={(e) => setFollowUpQuestion(e.target.value)}
+              placeholder="Ask an offline follow-up query (e.g. 'Audit projected runway with 20% OPEX cut')..."
+              className="flex-1 px-3 py-1.5 rounded-lg bg-[#07090e] border border-white/[0.1] text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500/60 font-mono"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !isRunning) {
+                  onFollowUpOffline(followUpQuestion);
+                }
+              }}
+            />
             <button
-              onClick={onFollowUpOffline}
+              onClick={() => onFollowUpOffline(followUpQuestion)}
               disabled={isRunning}
-              className={`flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg text-xs font-mono font-semibold transition-all border shrink-0 ${
+              className={`flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all border shrink-0 ${
                 isOfflineMode
-                  ? 'bg-amber-950/80 text-amber-300 border-amber-500/50 glow-amber'
-                  : 'bg-white/[0.05] hover:bg-amber-950/50 text-amber-400 border-amber-500/30'
+                  ? 'bg-amber-950/90 text-amber-300 border-amber-500/50 glow-amber'
+                  : 'bg-white/[0.05] hover:bg-amber-950/60 text-amber-400 border-amber-500/30'
               }`}
             >
               <WifiOff className="w-3.5 h-3.5 text-amber-400" />
-              <Zap className="w-3.5 h-3.5 text-amber-400" />
-              <span>Follow-Up in Offline Mode (~63ms Cache Hit)</span>
+              <span>Submit Offline Query (~63ms)</span>
             </button>
           </div>
         </div>

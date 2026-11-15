@@ -113,12 +113,12 @@ export const WireXRayLane: React.FC<WireXRayLaneProps> = ({
                   <span
                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold ${
                       isCeilingRespected
-                        ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/30'
+                        ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/30 glow-emerald'
                         : 'bg-rose-950/80 text-rose-300 border border-rose-500/30'
                     }`}
                   >
                     <CheckCircle className="w-2.5 h-2.5 text-emerald-400" />
-                    <span>0 Raw PII Leaked • &lt;2 KB Ceiling</span>
+                    <span>0 Bytes Raw PII Sent • &lt;2 KB Ceiling</span>
                   </span>
                 )}
               </div>

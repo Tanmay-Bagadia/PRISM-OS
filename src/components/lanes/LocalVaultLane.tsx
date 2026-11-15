@@ -8,6 +8,8 @@ import {
   RotateCw,
   Shield,
   Eye,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 
 interface LocalVaultLaneProps {
@@ -22,6 +24,8 @@ interface LocalVaultLaneProps {
   onChangePrompt: (newPrompt: string) => void;
   onRunPipeline: () => void;
   isRunning: boolean;
+  isOfflineMode?: boolean;
+  onToggleOffline?: () => void;
 }
 
 export const LocalVaultLane: React.FC<LocalVaultLaneProps> = ({
@@ -36,6 +40,8 @@ export const LocalVaultLane: React.FC<LocalVaultLaneProps> = ({
   onChangePrompt,
   onRunPipeline,
   isRunning,
+  isOfflineMode,
+  onToggleOffline,
 }) => {
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const activeFile = files.find((f) => f.id === activeFileId) || files[0];
@@ -172,18 +178,37 @@ export const LocalVaultLane: React.FC<LocalVaultLaneProps> = ({
 
       {/* Cognitive Posture Dial & Prompt Directive Controls */}
       <div className="p-3 bg-[#0d121c] border-t border-white/[0.08] space-y-3">
-        {/* Posture Segmented Dial */}
+        {/* Posture Segmented Dial & Offline Basement Simulator */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[11px] font-mono font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-1">
               <Shield className="w-3 h-3 text-indigo-400" />
               <span>Cognitive Posture</span>
             </span>
-            <span className="text-[10px] font-mono text-zinc-400">
-              {posture === 'vault' && 'Strict Local-Only • Zero Cloud'}
-              {posture === 'balanced' && 'Adaptive Router (Nano + Cloud Blueprint)'}
-              {posture === 'frontier' && 'Frontier Reasoning Priority'}
-            </span>
+
+            {onToggleOffline && (
+              <button
+                onClick={onToggleOffline}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono transition-all border ${
+                  isOfflineMode
+                    ? 'bg-amber-950/80 text-amber-300 border-amber-500/50'
+                    : 'bg-white/[0.04] text-zinc-400 border-white/[0.08] hover:text-zinc-200'
+                }`}
+                title="Toggle simulated hospital basement / offline environment"
+              >
+                {isOfflineMode ? (
+                  <>
+                    <WifiOff className="w-2.5 h-2.5 text-amber-400 animate-pulse" />
+                    <span>Basement (Offline)</span>
+                  </>
+                ) : (
+                  <>
+                    <Wifi className="w-2.5 h-2.5 text-emerald-400" />
+                    <span>Online</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-1.5 p-1 rounded-lg bg-[#07090e] border border-white/[0.08]">

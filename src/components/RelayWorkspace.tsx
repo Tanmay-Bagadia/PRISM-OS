@@ -28,8 +28,9 @@ interface RelayWorkspaceProps {
   blueprint: ReasoningBlueprint | null;
   hydratedReport: string;
   telemetry: StageTelemetry[] | null;
-  onFollowUpOffline: () => void;
+  onFollowUpOffline: (customPrompt?: string) => void;
   isOfflineMode: boolean;
+  onToggleOffline?: () => void;
 }
 
 export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
@@ -51,6 +52,7 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
   telemetry,
   onFollowUpOffline,
   isOfflineMode,
+  onToggleOffline,
 }) => {
   // Mobile active lane tab switcher
   const [mobileActiveLane, setMobileActiveLane] = React.useState<1 | 2 | 3>(1);
@@ -120,6 +122,8 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
             onChangePrompt={onChangePrompt}
             onRunPipeline={onRunPipeline}
             isRunning={isRunning}
+            isOfflineMode={isOfflineMode}
+            onToggleOffline={onToggleOffline}
           />
         </div>
 
