@@ -240,7 +240,7 @@ export const FullReportAccordion: React.FC<FullReportAccordionProps> = ({
   };
 
   return (
-    <section className="bg-white rounded-2xl border border-[#E6E5E0] shadow-[0_1px_2px_0_rgba(24,24,27,0.03)] mb-8 overflow-hidden transition-all">
+    <section className="bg-white rounded-2xl border border-[#E6E5E0] shadow-[0_1px_2px_0_rgba(24,24,27,0.03)] mb-12 overflow-hidden transition-all">
       <details className="group">
         <summary className="p-5 flex items-center justify-between cursor-pointer list-none select-none hover:bg-[#FAFAF9] transition-colors">
           <div className="flex items-center gap-2.5">

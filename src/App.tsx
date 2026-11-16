@@ -319,7 +319,7 @@ export const App: React.FC = () => {
   const hasActiveSession = files.length > 0 || prompt.length > 0 || Boolean(topology || blueprint);
 
   return (
-    <div className="min-h-screen bg-[#F7F7F5] text-[#18181B] flex flex-col font-sans selection:bg-[#ECFDF5] selection:text-[#15803D]">
+    <div className="min-h-screen bg-[#F7F7F5] text-[#18181B] flex flex-col font-sans selection:bg-[#ECFDF5] selection:text-[#15803D] pb-28 sm:pb-36">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl bg-white border border-[#E6E5E0] text-xs font-medium text-[#18181B] shadow-[0_4px_12px_rgba(24,24,27,0.08)] flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">

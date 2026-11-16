@@ -125,6 +125,12 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
   const activeFile = files.find((f) => f.id === activeFileId) || files[0];
   const hasResults = Boolean(topology || blueprint || hydratedReport);
 
+  const combinedRawContent = React.useMemo(() => {
+    return files
+      .map((f) => (files.length > 1 ? `=== FILE: ${f.name} ===\n${f.content.trim()}` : f.content.trim()))
+      .join('\n\n');
+  }, [files]);
+
   // Process a selected or dropped file into local memory
   const processAndAddFile = async (rawFile: File) => {
     try {
@@ -249,7 +255,7 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
   };
 
   return (
-    <main className="w-full max-w-[880px] mx-auto px-4 sm:px-6 pt-7 flex-1 pb-28">
+    <main className="w-full max-w-[880px] mx-auto px-4 sm:px-6 pt-7 flex-1 pb-28 sm:pb-36">
       {/* ─── PRIMARY WORKSPACE CONTROL CARD ─────────────────────────────────── */}
       <section
         onDragOver={handleDragOver}
@@ -559,7 +565,8 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-7">
           {/* Section: Key Indicators Bento Cards */}
           <KeyIndicatorsGrid
-            rawContent={activeFile?.content}
+            rawContent={combinedRawContent || activeFile?.content}
+            hydratedReport={hydratedReport}
             topology={topology}
             stage3Telemetry={telemetry?.[2]}
             isRunning={isRunning}
@@ -568,6 +575,7 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
           {/* Section: Actionable Focus Plan (Things 3 Checklist) */}
           <ActionableFocusPlan
             blueprint={blueprint}
+            hydratedReport={hydratedReport}
             checkedItemIds={checkedItemIds}
             onToggleItem={handleTogglePlanItem}
             isRunning={isRunning}

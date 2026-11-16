@@ -602,6 +602,7 @@ ${topoString}
       const hydrationPrompt = `
 Execute the following reasoning blueprint directly against the user's raw local data.
 Generate a structured, insightful Markdown report answering: "${prompt}".
+Strictly ground every date, number, and entity in the provided Raw Local Data; never invent report dates like 'October 26, 2023' if no date is specified.
 Blueprint:
 ${JSON.stringify(blueprint)}
 
