@@ -360,7 +360,6 @@ export const App: React.FC = () => {
           setDevice((prev) => ({ ...prev, online: newOnline }));
           showToast(newOnline ? 'Connected to Network' : 'Air-Gap Offline Engaged (Local Cache Only)');
         }}
-        selectedScenarioId={selectedScenario.id}
       />
 
       {/* Slide-Over "Privacy Receipt" Drawer */}

@@ -40,7 +40,6 @@ interface RelayWorkspaceProps {
   onFollowUpOffline: (customPrompt?: string) => void;
   isOfflineMode: boolean;
   onToggleOffline?: () => void;
-  selectedScenarioId: string;
 }
 
 export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
@@ -60,7 +59,6 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
   hydratedReport,
   telemetry,
   onFollowUpOffline,
-  selectedScenarioId,
 }) => {
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [modalFile, setModalFile] = React.useState<ScenarioFile | null>(null);
@@ -246,7 +244,6 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
 
       {/* SECTION: Key Indicators (3 Bento Cards) */}
       <KeyIndicatorsGrid
-        scenarioId={selectedScenarioId}
         rawContent={activeFile?.content}
         topology={topology}
         stage3Telemetry={telemetry?.[2]}
@@ -255,10 +252,10 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
 
       {/* SECTION: Actionable Focus Plan (Things 3 Style Checklist) */}
       <ActionableFocusPlan
-        scenarioId={selectedScenarioId}
         blueprint={blueprint}
         checkedItemIds={checkedItemIds}
         onToggleItem={handleTogglePlanItem}
+        isRunning={isRunning}
       />
 
       {/* SECTION: Expandable Detailed Grounded Synthesis & Dual-Grounding */}

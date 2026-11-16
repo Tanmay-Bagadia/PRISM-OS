@@ -26,7 +26,7 @@ export const PrivacyReceiptDrawer: React.FC<PrivacyReceiptDrawerProps> = ({
   topology,
   blueprint,
   telemetry,
-  activeFileNames = ['Blood_Panel.pdf', 'HRV_Sleep.csv'],
+  activeFileNames = [],
 }) => {
   const [copiedTopo, setCopiedTopo] = React.useState(false);
   const [copiedBp, setCopiedBp] = React.useState(false);
@@ -75,7 +75,7 @@ export const PrivacyReceiptDrawer: React.FC<PrivacyReceiptDrawerProps> = ({
       hardware_isolated: true,
       cryptographic_nonce: Math.random().toString(16).slice(2, 14),
       timestamp: new Date().toISOString(),
-      documents: activeFileNames,
+      documents: activeFileNames.length > 0 ? activeFileNames : ['Local Confidential Document'],
       stage_telemetry: telemetry || [
         { stage: '1_topology_distillation', inferenceSource: 'ON_DEVICE', bytesSentToCloud: 0 },
         { stage: '2_blueprint_reasoning', inferenceSource: 'IN_CLOUD', bytesSentToCloud: topoBytes },
@@ -215,7 +215,7 @@ export const PrivacyReceiptDrawer: React.FC<PrivacyReceiptDrawerProps> = ({
   egress_payload_size: 0,
   hardware_isolated: true,
   cryptographic_nonce: "90e1f37ac69",
-  documents: activeFileNames,
+  documents: activeFileNames.length > 0 ? activeFileNames : ['Local Confidential Document'],
   verification: "device_integrity_attested"
 }, null, 2)}
             </pre>
