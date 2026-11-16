@@ -17,9 +17,7 @@ import {
   getRemoteConfigThresholds,
 } from './lib/firebase/client';
 import { collection, getDocs } from 'firebase/firestore';
-import { BENCHMARK_SCENARIOS, type BenchmarkScenario } from './data/scenarios';
 import { TelemetryBar } from './components/TelemetryBar';
-import { ScenarioSelector } from './components/ScenarioSelector';
 import { RelayWorkspace } from './components/RelayWorkspace';
 import { PrivacyReceiptDrawer } from './components/PrivacyReceiptDrawer';
 import {
@@ -51,17 +49,12 @@ export const App: React.FC = () => {
 
   const [thresholds, setThresholds] = React.useState<RemoteThresholds>(() => getRemoteConfigThresholds());
 
-  // ─── Scenario & Workspace State ───────────────────────────────────────
-  const [selectedScenario, setSelectedScenario] = React.useState<BenchmarkScenario>(
-    BENCHMARK_SCENARIOS[0]!
-  );
-  const [files, setFiles] = React.useState<ScenarioFile[]>(BENCHMARK_SCENARIOS[0]!.files);
-  const [activeFileId, setActiveFileId] = React.useState<string>(
-    BENCHMARK_SCENARIOS[0]!.files[0]!.id
-  );
+  // ─── Clean User-Driven Workspace State (Zero Pre-Loaded Data) ──────────
+  const [files, setFiles] = React.useState<ScenarioFile[]>([]);
+  const [activeFileId, setActiveFileId] = React.useState<string>('');
   // Default to Local Only (vault) per reference UI
   const [posture, setPosture] = React.useState<CognitivePosture>('vault');
-  const [prompt, setPrompt] = React.useState<string>(BENCHMARK_SCENARIOS[0]!.defaultPrompt);
+  const [prompt, setPrompt] = React.useState<string>('');
 
   // ─── Pipeline Execution & Output State ────────────────────────────────
   const [isRunning, setIsRunning] = React.useState(false);
@@ -194,21 +187,6 @@ export const App: React.FC = () => {
     }
   };
 
-  // ─── Scenario Switcher ────────────────────────────────────────────────
-  const handleSelectScenario = (scenario: BenchmarkScenario) => {
-    setSelectedScenario(scenario);
-    setFiles(scenario.files);
-    setActiveFileId(scenario.files[0]!.id);
-    setPrompt(scenario.defaultPrompt);
-    // Clear stale outputs on scenario switch
-    setTopology(null);
-    setBlueprint(null);
-    setHydratedReport('');
-    setTelemetry(null);
-    setIsPrivacyReceiptOpen(false);
-    showToast(`Loaded "${scenario.title}" with ${scenario.files.length} confidential files`);
-  };
-
   // ─── File Management ──────────────────────────────────────────────────
   const handleUpdateFileContent = (fileId: string, newContent: string) => {
     setFiles((prev) =>
@@ -217,21 +195,67 @@ export const App: React.FC = () => {
   };
 
   const handleAddCustomFile = (newFile: ScenarioFile) => {
-    setFiles((prev) => [newFile, ...prev]);
+    setFiles((prev) => {
+      // Replace if file with same name exists, otherwise prepend
+      const existingIdx = prev.findIndex((f) => f.name === newFile.name);
+      if (existingIdx >= 0) {
+        const copy = [...prev];
+        copy[existingIdx] = newFile;
+        return copy;
+      }
+      return [newFile, ...prev];
+    });
     setActiveFileId(newFile.id);
-    showToast(`Loaded custom file: "${newFile.name}"`);
+    showToast(`Loaded "${newFile.name}" into local memory`);
+  };
+
+  const handleRemoveFile = (fileId: string) => {
+    setFiles((prev) => {
+      const remaining = prev.filter((f) => f.id !== fileId);
+      if (activeFileId === fileId) {
+        setActiveFileId(remaining[0]?.id || '');
+      }
+      return remaining;
+    });
+    showToast('File removed from local memory');
+  };
+
+  // ─── Clear Workspace / New Session ────────────────────────────────────
+  const handleClearSession = () => {
+    setFiles([]);
+    setActiveFileId('');
+    setPrompt('');
+    setTopology(null);
+    setBlueprint(null);
+    setHydratedReport('');
+    setTelemetry(null);
+    setIsPrivacyReceiptOpen(false);
+    showToast('Workspace reset. New private session started.');
   };
 
   // ─── Execute PRISM Pipeline ───────────────────────────────────────────
   const executePipeline = async (overrideDevice?: DeviceContext, overridePrompt?: string) => {
-    const activeFile = files.find((f) => f.id === activeFileId) || files[0];
-    if (!activeFile?.content.trim()) return;
+    // Combine all attached files into one comprehensive raw content context
+    const validFiles = files.filter((f) => f.content && f.content.trim().length > 0);
+    const combinedRawContent = validFiles
+      .map((f) => (validFiles.length > 1 ? `=== FILE: ${f.name} ===\n${f.content.trim()}` : f.content.trim()))
+      .join('\n\n');
+
+    if (!combinedRawContent) {
+      showToast('Please attach at least one file or paste raw notes before analyzing.');
+      return;
+    }
+
+    const activePrompt = (overridePrompt || prompt).trim();
+    if (!activePrompt) {
+      showToast('Please type a question or select a goal for PRISM.');
+      return;
+    }
 
     setIsRunning(true);
     setActiveStageIndex(0);
 
     const activeDevice = overrideDevice || device;
-    const activePrompt = (overridePrompt || prompt).trim() || selectedScenario.defaultPrompt;
 
     if (overridePrompt) {
       setPrompt(overridePrompt);
@@ -239,7 +263,7 @@ export const App: React.FC = () => {
 
     try {
       const result = await runPrismPipeline({
-        rawContent: activeFile.content,
+        rawContent: combinedRawContent,
         prompt: activePrompt,
         posture,
         device: activeDevice,
@@ -292,6 +316,8 @@ export const App: React.FC = () => {
     await executePipeline(offlineDevice, customPrompt);
   };
 
+  const hasActiveSession = files.length > 0 || prompt.length > 0 || Boolean(topology || blueprint);
+
   return (
     <div className="min-h-screen bg-[#F7F7F5] text-[#18181B] flex flex-col font-sans selection:bg-[#ECFDF5] selection:text-[#15803D]">
       {/* Toast Notification */}
@@ -302,7 +328,7 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Top Navigation Bar */}
+      {/* Top Navigation Bar: Clean Logo + Status on Left, Offline + Receipt on Right */}
       <TelemetryBar
         nanoStatus={nanoStatus}
         device={device}
@@ -314,25 +340,13 @@ export const App: React.FC = () => {
         blueprintCount={cachedBlueprints.length}
         isFirebaseReady={isFirebaseReady}
         onOpenPrivacyReceipt={() => setIsPrivacyReceiptOpen(true)}
-        selectedScenarioId={selectedScenario.id}
-        onSelectScenario={handleSelectScenario}
         onToggleOffline={() => {
           const newOnline = !device.online;
           setDevice((prev) => ({ ...prev, online: newOnline }));
           showToast(newOnline ? 'Connected to Network' : 'Air-Gap Offline Engaged (Local Cache Only)');
         }}
-      />
-
-      {/* 1-Click Judge Scenario Bar (Mobile Viewport Fallback) */}
-      <ScenarioSelector
-        selectedScenarioId={selectedScenario.id}
-        onSelectScenario={handleSelectScenario}
-        device={device}
-        onToggleOffline={() => {
-          const newOnline = !device.online;
-          setDevice((prev) => ({ ...prev, online: newOnline }));
-          showToast(newOnline ? 'Connected to Network' : 'Air-Gap Offline Engaged (Local Cache Only)');
-        }}
+        onClearSession={handleClearSession}
+        hasActiveSession={hasActiveSession}
       />
 
       {/* Main Viewport Workspace */}
@@ -342,6 +356,7 @@ export const App: React.FC = () => {
         onSelectFile={setActiveFileId}
         onUpdateFileContent={handleUpdateFileContent}
         onAddCustomFile={handleAddCustomFile}
+        onRemoveFile={handleRemoveFile}
         posture={posture}
         onChangePosture={setPosture}
         prompt={prompt}

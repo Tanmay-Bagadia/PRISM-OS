@@ -3,10 +3,8 @@ import type { NanoAvailability, DeviceContext, StageTelemetry } from '../types/p
 import {
   Infinity as InfinityIcon,
   ShieldCheck,
-  ChevronDown,
+  RotateCcw,
 } from 'lucide-react';
-import type { BenchmarkScenario } from '../data/scenarios';
-import { BENCHMARK_SCENARIOS } from '../data/scenarios';
 
 interface TelemetryBarProps {
   nanoStatus: NanoAvailability;
@@ -19,40 +17,19 @@ interface TelemetryBarProps {
   blueprintCount?: number;
   isFirebaseReady?: boolean;
   onOpenPrivacyReceipt: () => void;
-  selectedScenarioId: string;
-  onSelectScenario: (scen: BenchmarkScenario) => void;
   onToggleOffline: () => void;
+  onClearSession?: () => void;
+  hasActiveSession?: boolean;
 }
 
 export const TelemetryBar: React.FC<TelemetryBarProps> = ({
   nanoStatus,
   device,
   onOpenPrivacyReceipt,
-  selectedScenarioId,
-  onSelectScenario,
   onToggleOffline,
+  onClearSession,
+  hasActiveSession = false,
 }) => {
-  const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
-  const dropdownRef = React.useRef<HTMLDivElement>(null);
-
-  // Close dropdown on click outside
-  React.useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Primary 3 scenarios on bar + extra 2 in dropdown
-  const primaryScenarios = BENCHMARK_SCENARIOS.slice(0, 3);
-  const extraScenarios = BENCHMARK_SCENARIOS.slice(3);
-
-  const isExtraSelected = extraScenarios.some((s) => s.id === selectedScenarioId);
-  const activeExtraScenario = extraScenarios.find((s) => s.id === selectedScenarioId);
-
   // Live on-device Nano indicator
   const renderNanoStatusBadge = () => {
     if (nanoStatus.status === 'available') {
@@ -91,10 +68,10 @@ export const TelemetryBar: React.FC<TelemetryBarProps> = ({
 
   return (
     <header className="sticky top-0 h-14 bg-white border-b border-[#E6E5E0] shadow-[0_1px_2px_0_rgba(24,24,27,0.03)] z-30 transition-colors">
-      <div className="w-full h-14 px-4 sm:px-6 flex items-center justify-between mx-auto max-w-7xl">
+      <div className="w-full h-14 px-4 sm:px-6 flex items-center justify-between mx-auto max-w-6xl">
         {/* Brand & Security Attestation Badge */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => onSelectScenario(BENCHMARK_SCENARIOS[0]!)}>
+          <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-lg bg-[#18181B] flex items-center justify-center text-white shadow-sm">
               <InfinityIcon className="w-4 h-4" />
             </div>
@@ -103,75 +80,28 @@ export const TelemetryBar: React.FC<TelemetryBarProps> = ({
           {renderNanoStatusBadge()}
         </div>
 
-        {/* Segmented Navigation Links (Desktop & Tablet) */}
-        <nav className="hidden md:flex items-center bg-[#EFEFEA] p-1 rounded-xl">
-          {primaryScenarios.map((scen) => {
-            const isSelected = scen.id === selectedScenarioId;
-            return (
-              <button
-                key={scen.id}
-                onClick={() => onSelectScenario(scen)}
-                className={`px-3 py-1 text-xs font-medium rounded-lg transition-all ${
-                  isSelected
-                    ? 'bg-white text-[#18181B] border border-[#E6E5E0] shadow-[0_1px_2px_rgba(0,0,0,0.04)] font-semibold'
-                    : 'text-[#4B5563] hover:text-[#18181B]'
-                }`}
-              >
-                {scen.title}
-              </button>
-            );
-          })}
-
-          {/* More Scenarios Dropdown */}
-          <div className="relative" ref={dropdownRef}>
-            <button
-              onClick={() => setIsDropdownOpen((prev) => !prev)}
-              className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-all flex items-center gap-1 ${
-                isExtraSelected
-                  ? 'bg-white text-[#18181B] border border-[#E6E5E0] shadow-[0_1px_2px_rgba(0,0,0,0.04)] font-semibold'
-                  : 'text-[#4B5563] hover:text-[#18181B]'
-              }`}
-            >
-              <span>{isExtraSelected ? activeExtraScenario?.title : 'More'}</span>
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {isDropdownOpen && (
-              <div className="absolute right-0 mt-1.5 w-44 bg-white rounded-xl border border-[#E6E5E0] shadow-[0_4px_12px_rgba(24,24,27,0.08)] py-1 z-50 animate-in fade-in zoom-in-95 duration-150">
-                {extraScenarios.map((scen) => (
-                  <button
-                    key={scen.id}
-                    onClick={() => {
-                      onSelectScenario(scen);
-                      setIsDropdownOpen(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors flex items-center justify-between ${
-                      scen.id === selectedScenarioId
-                        ? 'bg-[#F7F7F5] text-[#15803D] font-semibold'
-                        : 'text-[#18181B] hover:bg-[#F7F7F5]'
-                    }`}
-                  >
-                    <span>{scen.title}</span>
-                    {scen.id === selectedScenarioId && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#15803D]" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </nav>
-
         {/* Trailing Status & Primary Actions */}
-        <div className="flex items-center gap-3">
-          {/* Offline Tactical Toggle */}
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          {/* Subtle New Session / Clear Button */}
+          {hasActiveSession && onClearSession && (
+            <button
+              onClick={onClearSession}
+              title="Clear all attached files, notes, and analysis outputs"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-[#71717A] hover:text-[#18181B] hover:bg-[#F4F4F5] rounded-lg transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">New Session</span>
+            </button>
+          )}
+
+          {/* Offline Air-Gap Toggle */}
           <div className="flex items-center gap-2 pr-2 border-r border-[#E6E5E0]">
             <span className="text-[11px] font-medium text-[#4B5563]">Offline</span>
             <button
               aria-checked={!device.online}
               role="switch"
               onClick={onToggleOffline}
-              className={`w-9 h-5 rounded-full p-0.5 transition-colors relative focus:outline-none ${
+              className={`w-9 h-5 rounded-full p-0.5 transition-colors relative focus:outline-none cursor-pointer ${
                 !device.online ? 'bg-[#15803D]' : 'bg-[#E4E4DF]'
               }`}
               title={!device.online ? 'Simulating offline air-gap (IndexedDB SHA-256 cache)' : 'Connected to Network'}
