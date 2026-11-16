@@ -25,137 +25,179 @@ interface KeyIndicatorsGridProps {
   isRunning: boolean;
 }
 
+function extractMatch(text: string, pattern: RegExp, fallback: string): string {
+  const match = text.match(pattern);
+  return match && match[1] ? match[1].trim() : fallback;
+}
+
 export const KeyIndicatorsGrid: React.FC<KeyIndicatorsGridProps> = ({
   scenarioId,
   rawContent = '',
   stage3Telemetry,
   isRunning,
 }) => {
-  // Dynamically compute the 3 indicators based on scenario and raw content
+  // Dynamically extract and compute the 3 indicators from rawContent
   const indicators: KeyIndicatorData[] = React.useMemo(() => {
     if (scenarioId === 'scen_health') {
+      const vitDVal = extractMatch(rawContent, /Vitamin D\s*(?:\([^)]*\))?:\s*([0-9.]+)/i, '16');
+      const vitDNum = parseFloat(vitDVal) || 16;
+      const vitDIsLow = vitDNum < 30;
+
+      const ironVal = extractMatch(rawContent, /Iron\s*(?:\([^)]*\))?:\s*([0-9.]+)/i, '14');
+      const ironNum = parseFloat(ironVal) || 14;
+      const ironIsLow = ironNum < 20;
+
+      const sleepVal = extractMatch(rawContent, /(?:SleepDuration_Hrs|Average Sleep).*?,([0-9.]+)/i, '5.2');
+      const sleepNum = parseFloat(sleepVal) || 5.2;
+      const sleepDeficit = (7.5 - sleepNum).toFixed(1);
+
       return [
         {
           id: 'vit_d',
           label: 'Vitamin D (25-OH)',
-          badge: 'Low • Target 30+',
-          badgeType: 'warning',
-          value: '16',
+          badge: vitDIsLow ? `Low • Target 30+` : 'Optimal • In Range',
+          badgeType: vitDIsLow ? 'warning' : 'optimal',
+          value: vitDVal,
           unit: 'ng/mL',
-          currentLabel: 'Current: 16',
+          currentLabel: `Current: ${vitDVal}`,
           targetLabel: 'Target: 30 - 80',
-          currentPercentage: 20,
+          currentPercentage: Math.min(100, Math.round((vitDNum / 80) * 100)),
           targetStartPercentage: 30,
           targetEndPercentage: 80,
-          description: 'Direct contributor to chronic fatigue & low muscular power recovery.',
+          description: vitDIsLow
+            ? 'Direct contributor to chronic fatigue & low muscular power recovery.'
+            : 'Within normal clinical reference range for metabolic maintenance.',
         },
         {
           id: 'iron',
           label: 'Iron (Ferritin)',
-          badge: 'Low • Target 20+',
-          badgeType: 'warning',
-          value: '14',
+          badge: ironIsLow ? 'Low • Target 20+' : 'Optimal • In Range',
+          badgeType: ironIsLow ? 'warning' : 'optimal',
+          value: ironVal,
           unit: 'ng/mL',
-          currentLabel: 'Current: 14',
+          currentLabel: `Current: ${ironVal}`,
           targetLabel: 'Target: 20 - 150',
-          currentPercentage: 14,
+          currentPercentage: Math.min(100, Math.round((ironNum / 150) * 100)),
           targetStartPercentage: 20,
           targetEndPercentage: 90,
-          description: 'Suppressed ferritin reduces cellular oxygen delivery during work hours.',
+          description: ironIsLow
+            ? 'Suppressed ferritin reduces cellular oxygen delivery during work hours.'
+            : 'Sufficient cellular ferritin stores for systemic oxygenation.',
         },
         {
           id: 'sleep',
           label: 'Average Sleep',
-          badge: '2.3 hrs below goal',
-          badgeType: 'critical',
-          value: '5.2',
+          badge: sleepNum < 7 ? `${sleepDeficit} hrs below goal` : 'Restored Baseline',
+          badgeType: sleepNum < 6.5 ? 'critical' : sleepNum < 7.5 ? 'warning' : 'optimal',
+          value: sleepVal,
           unit: 'hrs',
-          currentLabel: 'Deep: 42m',
+          currentLabel: `Observed: ${sleepVal}h`,
           targetLabel: 'Target: 7.5 hrs total',
-          currentPercentage: 55,
+          currentPercentage: Math.min(100, Math.round((sleepNum / 8.5) * 100)),
           targetStartPercentage: 75,
           targetEndPercentage: 100,
-          description: 'Short sleep latency confirms high sleep pressure coupled with late alarms.',
+          description: sleepNum < 7
+            ? 'Short sleep latency confirms high sleep pressure coupled with late alarms.'
+            : 'Circadian rhythm architecture supports full neural recovery.',
         },
       ];
     }
 
     if (scenarioId === 'scen_cfo') {
+      const burnRaw = extractMatch(rawContent, /Monthly Net Burn:\s*\$?([0-9,.]+)/i, '420,000');
+      const burnNum = parseFloat(burnRaw.replace(/,/g, '')) || 420000;
+      const burnK = Math.round(burnNum / 1000);
+
+      const cashRaw = extractMatch(rawContent, /Current Cash[^:]*:\s*\$?([0-9,.]+)/i, '8,450,000');
+      const cashNum = parseFloat(cashRaw.replace(/,/g, '')) || 8450000;
+      const runwayMonths = burnNum > 0 ? (cashNum / burnNum).toFixed(1) : '20.1';
+
+      const arrRaw = extractMatch(rawContent, /ARR:\s*\$?([0-9,.]+)/i, '3,600,000');
+      const arrNum = parseFloat(arrRaw.replace(/,/g, '')) || 3600000;
+      const arrM = (arrNum / 1000000).toFixed(1);
+
       return [
         {
           id: 'burn',
           label: 'Monthly Net Burn',
-          badge: 'Burn • Target < $300k',
-          badgeType: 'warning',
-          value: '420',
+          badge: burnK > 300 ? 'Burn • Target < $300k' : 'Controlled Burn',
+          badgeType: burnK > 300 ? 'warning' : 'optimal',
+          value: burnK,
           unit: 'k / mo',
-          currentLabel: 'Current: $420k',
+          currentLabel: `Current: $${burnK}k`,
           targetLabel: 'Target: < $300k',
-          currentPercentage: 75,
+          currentPercentage: Math.min(100, Math.round((burnK / 500) * 100)),
           targetStartPercentage: 25,
-          targetEndPercentage: 55,
-          description: 'Payroll ($310k) and Cloud GPU cluster ($88k) drive monthly cash depletion.',
+          targetEndPercentage: 60,
+          description: 'Payroll and compute infrastructure OPEX drive monthly cash depletion.',
         },
         {
           id: 'runway',
           label: 'Cash Runway',
-          badge: 'Healthy • Min 18m',
-          badgeType: 'optimal',
-          value: '20.1',
+          badge: parseFloat(runwayMonths) >= 18 ? 'Healthy • Min 18m' : 'Warning • Runway Short',
+          badgeType: parseFloat(runwayMonths) >= 18 ? 'optimal' : 'critical',
+          value: runwayMonths,
           unit: 'months',
-          currentLabel: 'Current: 20.1m',
+          currentLabel: `Runway: ${runwayMonths}m`,
           targetLabel: 'Target: 18 - 36m',
-          currentPercentage: 62,
+          currentPercentage: Math.min(100, Math.round((parseFloat(runwayMonths) / 36) * 100)),
           targetStartPercentage: 50,
           targetEndPercentage: 100,
-          description: '$8.45M in SVB provides buffer; cash-out date projected Q3 2028.',
+          description: `$${(cashNum / 1000000).toFixed(2)}M in bank cash provides operating buffer.`,
         },
         {
           id: 'arr',
           label: 'ARR Trajectory',
-          badge: '84% YoY Growth',
+          badge: 'Annual Revenue',
           badgeType: 'optimal',
-          value: '3.6',
+          value: arrM,
           unit: '$M ARR',
-          currentLabel: 'Current: $3.6M',
+          currentLabel: `Current: $${arrM}M`,
           targetLabel: 'Target: $5.0M Series C',
-          currentPercentage: 72,
+          currentPercentage: Math.min(100, Math.round((arrNum / 5000000) * 100)),
           targetStartPercentage: 60,
           targetEndPercentage: 100,
-          description: 'Top-decile revenue expansion across 42 FTE enterprise robotics accounts.',
+          description: 'Top-decile revenue expansion across enterprise contracts.',
         },
       ];
     }
 
     if (scenarioId === 'scen_legal') {
+      const damagesRaw = extractMatch(rawContent, /Liquidated Damages[^:]*:\s*.*?\$?([0-9,.]+)/i, '5,000,000');
+      const damagesNum = parseFloat(damagesRaw.replace(/,/g, '')) || 5000000;
+      const damagesM = (damagesNum / 1000000).toFixed(1);
+
+      const nonCompeteMonths = extractMatch(rawContent, /([0-9]+)\s*months\s*following\s*disclosure/i, '48');
+      const nonCompeteNum = parseInt(nonCompeteMonths, 10) || 48;
+
       return [
         {
           id: 'damages',
           label: 'Liquidated Damages',
-          badge: 'Severe • High Risk',
-          badgeType: 'critical',
-          value: '5.0',
+          badge: damagesNum > 500000 ? 'Severe • High Risk' : 'Standard Cap',
+          badgeType: damagesNum > 500000 ? 'critical' : 'optimal',
+          value: damagesM,
           unit: '$M Penalty',
-          currentLabel: 'Current: $5.0M',
+          currentLabel: `Penalty: $${damagesM}M`,
           targetLabel: 'Target: Mutual $250k',
-          currentPercentage: 90,
+          currentPercentage: Math.min(100, Math.round((damagesNum / 5000000) * 100)),
           targetStartPercentage: 10,
           targetEndPercentage: 25,
-          description: 'Section 4 statutory penalty triggers immediate breach liability without proof of damages.',
+          description: 'Immediate statutory breach penalty without requirement to prove damages.',
         },
         {
           id: 'non_compete',
           label: 'Non-Compete Term',
-          badge: 'Overreach • 4 Years',
-          badgeType: 'warning',
-          value: '48',
+          badge: nonCompeteNum > 24 ? `Overreach • ${Math.round(nonCompeteNum / 12)} Years` : 'Market Standard',
+          badgeType: nonCompeteNum > 24 ? 'warning' : 'optimal',
+          value: nonCompeteMonths,
           unit: 'months',
-          currentLabel: 'Current: 48m',
+          currentLabel: `Term: ${nonCompeteMonths}m`,
           targetLabel: 'Target: 12 - 24m',
-          currentPercentage: 80,
+          currentPercentage: Math.min(100, Math.round((nonCompeteNum / 60) * 100)),
           targetStartPercentage: 20,
           targetEndPercentage: 40,
-          description: 'Section 7.3 restricts mRNA/CRISPR delivery development far beyond market standard.',
+          description: 'Restrictive covenant restricts commercial vector development post-disclosure.',
         },
         {
           id: 'injunction',
@@ -169,21 +211,25 @@ export const KeyIndicatorsGrid: React.FC<KeyIndicatorsGridProps> = ({
           currentPercentage: 10,
           targetStartPercentage: 50,
           targetEndPercentage: 100,
-          description: 'Section 9.1 allows Disclosing Party immediate injunction without posting bond.',
+          description: 'Allows Disclosing Party immediate injunction without posting court bond.',
         },
       ];
     }
 
     if (scenarioId === 'scen_cyber') {
+      const cvss = extractMatch(rawContent, /CVSS\s*([0-9.]+)/i, '9.8');
+      const wire = extractMatch(rawContent, /Wire Transfer[^:]*:\s*\$?([0-9,.]+)/i, '1,250,000');
+      const wireM = (parseFloat(wire.replace(/,/g, '')) / 1000000).toFixed(2);
+
       return [
         {
           id: 'cvss',
           label: 'Threat Severity',
           badge: 'Critical • Lateral',
           badgeType: 'critical',
-          value: '9.8',
+          value: cvss,
           unit: 'CVSS Score',
-          currentLabel: 'Score: 9.8',
+          currentLabel: `Score: ${cvss}`,
           targetLabel: 'Target: 0.0 (Clean)',
           currentPercentage: 98,
           targetStartPercentage: 0,
@@ -195,14 +241,14 @@ export const KeyIndicatorsGrid: React.FC<KeyIndicatorsGridProps> = ({
           label: 'Intercepted Wire',
           badge: 'Hold • High Priority',
           badgeType: 'warning',
-          value: '1.25',
+          value: wireM,
           unit: '$M Wire',
-          currentLabel: 'Intercepted: $1.25M',
+          currentLabel: `Hold: $${wireM}M`,
           targetLabel: 'Target: $0.00 Loss',
           currentPercentage: 75,
           targetStartPercentage: 0,
           targetEndPercentage: 10,
-          description: 'Unauthorized wire transfer initiated to 185.220.101.5 intercepted by SOC.',
+          description: 'Unauthorized transfer initiated to external IP intercepted by SOC.',
         },
         {
           id: 'hosts',
@@ -216,21 +262,26 @@ export const KeyIndicatorsGrid: React.FC<KeyIndicatorsGridProps> = ({
           currentPercentage: 45,
           targetStartPercentage: 80,
           targetEndPercentage: 100,
-          description: 'Production Postgres DB and Kafka Broker-03 targeted via staged ns1.darkrelay.net queries.',
+          description: 'Production Postgres DB and Kafka Broker targeted via staged DNS queries.',
         },
       ];
     }
 
     if (scenarioId === 'scen_hr') {
+      const demand = extractMatch(rawContent, /Settlement Offer Demanded:\s*\$?([0-9,.]+)/i, '750,000');
+      const demandK = Math.round(parseFloat(demand.replace(/,/g, '')) / 1000) || 750;
+      const salary = extractMatch(rawContent, /Base Salary:\s*\$?([0-9,.]+)/i, '385,000');
+      const salaryK = Math.round(parseFloat(salary.replace(/,/g, '')) / 1000) || 385;
+
       return [
         {
           id: 'settlement',
           label: 'Settlement Demand',
           badge: 'Whistleblower Exposure',
           badgeType: 'warning',
-          value: '750',
+          value: demandK,
           unit: '$k Demand',
-          currentLabel: 'Demand: $750k',
+          currentLabel: `Demand: $${demandK}k`,
           targetLabel: 'Target: Cap at $385k',
           currentPercentage: 75,
           targetStartPercentage: 20,
@@ -242,14 +293,14 @@ export const KeyIndicatorsGrid: React.FC<KeyIndicatorsGridProps> = ({
           label: 'Base Remuneration',
           badge: 'Executive Level',
           badgeType: 'optimal',
-          value: '385',
+          value: salaryK,
           unit: '$k Annual',
-          currentLabel: 'Base: $385k',
+          currentLabel: `Base: $${salaryK}k`,
           targetLabel: 'Bonus: $150k target',
           currentPercentage: 65,
           targetStartPercentage: 50,
           targetEndPercentage: 90,
-          description: 'Base salary plus $150k target performance bonus.',
+          description: 'Executive compensation package with performance bonus allocation.',
         },
         {
           id: 'disputed_rev',
@@ -268,9 +319,11 @@ export const KeyIndicatorsGrid: React.FC<KeyIndicatorsGridProps> = ({
       ];
     }
 
-    // Fallback for custom user files
-    const words = rawContent.split(/\s+/).length;
+    // Dynamic parsing for custom uploaded user files
+    const words = rawContent.split(/\s+/).filter(Boolean).length;
     const lines = rawContent.split('\n').filter(Boolean).length;
+    const numbersFound = rawContent.match(/\b\d+(\.\d+)?\b/g) || [];
+
     return [
       {
         id: 'c1',
@@ -288,17 +341,17 @@ export const KeyIndicatorsGrid: React.FC<KeyIndicatorsGridProps> = ({
       },
       {
         id: 'c2',
-        label: 'Structural Entities',
-        badge: 'Sanitized Graph',
+        label: 'Extracted Metrics',
+        badge: 'Numeric Graph',
         badgeType: 'optimal',
-        value: lines,
-        unit: 'records',
-        currentLabel: `${lines} records`,
-        targetLabel: 'Distilled < 2 KB',
-        currentPercentage: Math.min(100, Math.round((lines / 50) * 100)),
-        targetStartPercentage: 30,
+        value: numbersFound.length,
+        unit: 'numbers',
+        currentLabel: `${numbersFound.length} values masked`,
+        targetLabel: '0 Raw Sent',
+        currentPercentage: Math.min(100, Math.round((numbersFound.length / 20) * 100)),
+        targetStartPercentage: 20,
         targetEndPercentage: 90,
-        description: 'Topology nodes distilled for blind reasoning blueprint.',
+        description: 'All local numeric metrics are masked on-device prior to Stage 2.',
       },
       {
         id: 'c3',
@@ -307,8 +360,8 @@ export const KeyIndicatorsGrid: React.FC<KeyIndicatorsGridProps> = ({
         badgeType: 'optimal',
         value: '100',
         unit: '% Isolated',
-        currentLabel: '0 bytes PII sent',
-        targetLabel: '100% Cryptographic Lock',
+        currentLabel: `${lines} records protected`,
+        targetLabel: '100% Device Sandbox',
         currentPercentage: 100,
         targetStartPercentage: 90,
         targetEndPercentage: 100,
