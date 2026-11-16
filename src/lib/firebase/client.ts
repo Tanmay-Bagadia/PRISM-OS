@@ -18,7 +18,7 @@ import {
 } from 'firebase/auth';
 import {
   initializeAppCheck,
-  ReCaptchaEnterpriseProvider,
+  ReCaptchaV3Provider,
   type AppCheck,
 } from 'firebase/app-check';
 import {
@@ -121,7 +121,7 @@ export function getFirebaseRemoteConfig(): RemoteConfig {
       maxRttForCloud: 2000,
       vaultForceLocal: true,
       frontierForceCloud: true,
-      cloudModel: 'gemini-2.0-flash',
+      cloudModel: 'gemini-2.5-flash',
     };
     remoteConfigInstance.settings.minimumFetchIntervalMillis = 3600000; // 1 hour
   }
@@ -168,7 +168,7 @@ export function getRemoteConfigCloudModel(fallbackModel?: string): string {
   } catch {
     // Non-blocking fallback
   }
-  return import.meta.env.VITE_GEMINI_CLOUD_MODEL || fallbackModel || 'gemini-2.0-flash';
+  return import.meta.env.VITE_GEMINI_CLOUD_MODEL || fallbackModel || 'gemini-2.5-flash';
 }
 
 /**
@@ -194,7 +194,7 @@ export function setupAppCheck(): AppCheck | null {
 
   try {
     appCheckInstance = initializeAppCheck(app, {
-      provider: new ReCaptchaEnterpriseProvider(recaptchaKey),
+      provider: new ReCaptchaV3Provider(recaptchaKey),
       isTokenAutoRefreshEnabled: true,
     });
   } catch {

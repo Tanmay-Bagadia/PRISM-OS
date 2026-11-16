@@ -488,7 +488,7 @@ ${rawContent}
     try {
       const ai = getFirebaseAI();
       const cloudModelName = getRemoteConfigCloudModel(
-        import.meta.env.VITE_GEMINI_CLOUD_MODEL || 'gemini-3.5-flash-lite'
+        import.meta.env.VITE_GEMINI_CLOUD_MODEL || 'gemini-2.5-flash'
       );
       const cloudModel: GenerativeModel = getGenerativeModel(ai, {
         mode: InferenceMode.PREFER_IN_CLOUD,
@@ -528,7 +528,7 @@ ${rawContent}
 You are the PRISM Cloud Blueprint Reasoner.
 You are given an abstract entity/relationship topology with zero PII or raw numbers.
 Formulate a structured Reasoning Blueprint to achieve the goal: "${prompt}".
-You MUST set "schema": "prism-blueprint-v1" in the output JSON.
+You MUST explicitly set "schema": "prism-blueprint-v1" in the output JSON.
 Topology:
 ${topoString}
 `;
@@ -556,7 +556,8 @@ ${topoString}
       } catch {
         // Cache persistence write warning ignored
       }
-    } catch {
+    } catch (err) {
+      console.error('[PRISM Stage 2 Cloud Error]:', err);
       // Cloud generation failed or offline -> fallback to local dynamic blueprint generator
       stage2Fallback = true;
       stage2InferenceSource = 'ON_DEVICE';
