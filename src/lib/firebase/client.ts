@@ -176,7 +176,7 @@ export function getRemoteConfigCloudModel(fallbackModel?: string): string {
  */
 export function setupAppCheck(): AppCheck | null {
   if (appCheckInstance) return appCheckInstance;
-  if (typeof window === 'undefined') return null;
+  if (typeof window === 'undefined' || import.meta.env.MODE === 'test') return null;
 
   const recaptchaKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
   if (!recaptchaKey) {
@@ -184,12 +184,9 @@ export function setupAppCheck(): AppCheck | null {
   }
 
   const app = getFirebaseApp();
-  const debugToken = import.meta.env.VITE_APPCHECK_DEBUG_TOKEN;
-
-  if (debugToken) {
-    // Enable debug token for local dev and judge environments
-    (self as unknown as { FIREBASE_APPCHECK_DEBUG_TOKEN: boolean | string }).FIREBASE_APPCHECK_DEBUG_TOKEN =
-      debugToken === 'true' ? true : debugToken;
+  if (import.meta.env.DEV && import.meta.env.VITE_APPCHECK_DEBUG_TOKEN === 'true') {
+    // Enable debug token strictly for local dev when explicitly requested
+    (self as unknown as { FIREBASE_APPCHECK_DEBUG_TOKEN: boolean | string }).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
   }
 
   try {
