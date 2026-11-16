@@ -14,47 +14,50 @@ export interface BenchmarkScenario {
 export const BENCHMARK_SCENARIOS: BenchmarkScenario[] = [
   {
     id: 'scen_health',
-    title: 'Health Detective',
+    title: 'Health & Labs',
     domain: 'Healthcare & Clinical Bio-Telemetry',
     subtitle: 'Blood Panel & Wearable 90-Day Bio-Telemetry',
     category: 'health',
     iconName: 'Activity',
-    defaultPrompt: 'Formulate localized clinical risk stratification, drug interactions, and arrhythmia stabilization directives',
+    defaultPrompt: 'Why am I tired, and do my morning supplements clash?',
     files: [
       {
-        id: 'health_patient_admission',
-        name: 'blood_metabolic_panel.confidential.txt',
-        description: 'Comprehensive Blood Panel, Lipids & Critical Biomarkers',
+        id: 'health_blood_panel',
+        name: 'Blood_Panel.pdf',
+        description: 'Comprehensive Blood Panel, Lipids & Critical Biomarkers (2.4 MB)',
         category: 'health',
-        content: `=== CONFIDENTIAL MEDICAL ADMISSION & BILLING RECORD ===
+        content: `=== CONFIDENTIAL MEDICAL ADMISSION & METABOLIC RECORD ===
 Patient Name: Alexander Vance
 Date of Birth: 04/12/1982 | SSN: 948-22-1049
 Contact: alex.vance@blackmesa-labs.io | Phone: (555) 749-3820
 Billing Account: 4111-2222-3333-4444
 Annual Compensation: $240,000.00
-Primary Diagnosis: Refractory Ventricular Arrhythmia (ICD-10 I47.2)
+Primary Diagnosis: Refractory Daytime Fatigue & Ventricular Arrhythmia (ICD-10 I47.2)
 Blood Pressure: 145/95 mmHg | Resting Heart Rate: 98 bpm
 Attending Physician: Dr. Gordon Freeman (NPI: 1982736450)
 Estimated Treatment Cost: $68,500.00
-Fasting Glucose: 142 mg/dL | HbA1c: 7.8% (Type 2 Diabetic dysregulation)
+Vitamin D (25-OH): 16 ng/mL (Low • Target: 30 - 80 ng/mL)
+Iron (Ferritin): 14 ng/mL (Low • Target: 20 - 150 ng/mL)
 Serum Potassium: 3.2 mEq/L (Hypokalemic baseline - Ref: 3.5-5.0)
 Serum Magnesium: 1.4 mg/dL (Critical Low - Ref: 1.7-2.2)
+Fasting Glucose: 142 mg/dL | HbA1c: 7.8% (Type 2 Diabetic dysregulation)
 Troponin-I: 0.12 ng/mL (Myocardial injury threshold border)
 Total Cholesterol: 248 mg/dL | LDL: 164 mg/dL | HDL: 38 mg/dL
+Active Supplement Intake: Morning Calcium Carbonate (600mg) + Iron Sulfate (65mg) taken together at 7:30 AM
 ======================================================`,
       },
       {
         id: 'health_wearable_hrv',
-        name: 'wearable_hrv_90d.csv',
-        description: '90-Day Continuous Wearable Heart Rate Variability CSV',
+        name: 'HRV_Sleep.csv',
+        description: 'Continuous Wearable Sleep & Heart Rate Variability CSV (418 KB)',
         category: 'health',
-        content: `Timestamp,RestingHR_Bpm,SDNN_HRV_ms,ArrhythmiaSpikes,DeepSleep_Min,RecoveryScore
-2026-09-01,72,58,0,84,88
-2026-09-15,74,52,1,76,79
-2026-10-01,81,41,3,58,62
-2026-10-15,88,34,8,42,48
-2026-11-01,94,26,14,35,31
-2026-11-14,98,21,22,28,19`,
+        content: `Timestamp,RestingHR_Bpm,SDNN_HRV_ms,SleepDuration_Hrs,DeepSleep_Min,RecoveryScore
+2026-11-01,72,58,5.4,42,48
+2026-11-05,74,52,5.1,38,44
+2026-11-08,81,41,5.5,45,51
+2026-11-10,88,34,4.9,32,36
+2026-11-12,94,26,5.3,44,41
+2026-11-14,98,21,5.2,42,38`,
       },
       {
         id: 'health_med_log',
@@ -63,17 +66,19 @@ Total Cholesterol: 248 mg/dL | LDL: 164 mg/dL | HDL: 38 mg/dL
         category: 'health',
         content: `=== INPATIENT PHARMACY ACTIVE RECONCILIATION LOG ===
 Patient: Alexander Vance (MRN: 89104-B)
-1. Amiodarone Hydrochloride IV Infusion (1.0 mg/min for acute ventricular stabilization)
-2. Metformin HCl (500mg Oral BID with meals)
-3. Lisinopril (20mg Oral Daily for essential hypertension)
-4. Atorvastatin Calcium (40mg Oral QHS)
-WARNING NOTE: Potential QT prolongation risk compounding hypokalemia and low serum magnesium.`,
+1. Iron Sulfate (65mg Oral with breakfast)
+2. Calcium Carbonate (600mg Oral with breakfast)
+3. Amiodarone Hydrochloride IV Infusion (1.0 mg/min for acute ventricular stabilization)
+4. Metformin HCl (500mg Oral BID with meals)
+5. Lisinopril (20mg Oral Daily for essential hypertension)
+6. Atorvastatin Calcium (40mg Oral QHS)
+WARNING NOTE: Potential absorption clash: Calcium inhibits up to 60% of non-heme iron absorption when co-administered. QT prolongation risk compounding hypokalemia and low serum magnesium.`,
       },
     ],
   },
   {
     id: 'scen_cfo',
-    title: 'Startup CFO Runway',
+    title: 'Startup Finances',
     domain: 'Startup CFO Financial Diligence',
     subtitle: 'Series B M&A Due Diligence & Cash Runway Audit',
     category: 'finance',
@@ -128,7 +133,7 @@ Employee Pool (Unallocated),Options,500000,$0.00,5.0%`,
   },
   {
     id: 'scen_legal',
-    title: 'NDA Contract Redliner',
+    title: 'Contract Check',
     domain: 'Enterprise Legal & M&A NDA Redlining',
     subtitle: 'Mutual Non-Disclosure & IP Assignment Agreement',
     category: 'legal',
@@ -169,7 +174,7 @@ Assignment Obligation: Any improvements created by Receiving Party shall automat
   },
   {
     id: 'scen_cyber',
-    title: 'SOC Threat Forensics',
+    title: 'SOC Forensics',
     domain: 'Cybersecurity SOC Threat Forensics',
     subtitle: 'Severity-1 Lateral Intrusion & Ransomware Containment',
     category: 'legal',
@@ -197,7 +202,7 @@ Impacted Services: Production Postgres DB, Kafka Broker-03`,
   },
   {
     id: 'scen_hr',
-    title: 'HR Executive Grievance',
+    title: 'HR Grievance',
     domain: 'HR Executive Compensation & Grievance',
     subtitle: 'Whistleblower Severance & Accounting Liability',
     category: 'legal',

@@ -21,6 +21,7 @@ import { BENCHMARK_SCENARIOS, type BenchmarkScenario } from './data/scenarios';
 import { TelemetryBar } from './components/TelemetryBar';
 import { ScenarioSelector } from './components/ScenarioSelector';
 import { RelayWorkspace } from './components/RelayWorkspace';
+import { PrivacyReceiptDrawer } from './components/PrivacyReceiptDrawer';
 import {
   MobileBlueprintDrawer,
   type CachedBlueprintRecord,
@@ -58,7 +59,8 @@ export const App: React.FC = () => {
   const [activeFileId, setActiveFileId] = React.useState<string>(
     BENCHMARK_SCENARIOS[0]!.files[0]!.id
   );
-  const [posture, setPosture] = React.useState<CognitivePosture>('balanced');
+  // Default to Local Only (vault) per reference UI
+  const [posture, setPosture] = React.useState<CognitivePosture>('vault');
   const [prompt, setPrompt] = React.useState<string>(BENCHMARK_SCENARIOS[0]!.defaultPrompt);
 
   // ─── Pipeline Execution & Output State ────────────────────────────────
@@ -69,9 +71,9 @@ export const App: React.FC = () => {
   const [hydratedReport, setHydratedReport] = React.useState<string>('');
   const [telemetry, setTelemetry] = React.useState<StageTelemetry[] | null>(null);
 
-  // ─── Blueprint Sync Drawer & Privacy Wire Drawer State ─────────────
+  // ─── Privacy Receipt & Blueprint Drawers State ─────────────────────────
+  const [isPrivacyReceiptOpen, setIsPrivacyReceiptOpen] = React.useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
-  const [isWireDrawerOpen, setIsWireDrawerOpen] = React.useState(false);
   const [cachedBlueprints, setCachedBlueprints] = React.useState<CachedBlueprintRecord[]>([]);
   const [toastMessage, setToastMessage] = React.useState<string | null>(null);
 
@@ -142,12 +144,15 @@ export const App: React.FC = () => {
         }>;
       };
       if (navWithBattery.getBattery) {
-        navWithBattery.getBattery().then((battery) => {
-          setDevice((prev) => ({ ...prev, batteryLevel: battery.level }));
-          battery.addEventListener('levelchange', () => {
+        navWithBattery
+          .getBattery()
+          .then((battery) => {
             setDevice((prev) => ({ ...prev, batteryLevel: battery.level }));
-          });
-        }).catch(() => {});
+            battery.addEventListener('levelchange', () => {
+              setDevice((prev) => ({ ...prev, batteryLevel: battery.level }));
+            });
+          })
+          .catch(() => {});
       }
 
       return () => {
@@ -195,12 +200,12 @@ export const App: React.FC = () => {
     setFiles(scenario.files);
     setActiveFileId(scenario.files[0]!.id);
     setPrompt(scenario.defaultPrompt);
-    // Reset output lanes
+    // Clear stale outputs on scenario switch
     setTopology(null);
     setBlueprint(null);
     setHydratedReport('');
     setTelemetry(null);
-    setIsWireDrawerOpen(false);
+    setIsPrivacyReceiptOpen(false);
     showToast(`Loaded "${scenario.title}" with ${scenario.files.length} confidential files`);
   };
 
@@ -288,16 +293,16 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0e1015] text-zinc-100 flex flex-col font-sans selection:bg-emerald-500/30">
+    <div className="min-h-screen bg-[#F7F7F5] text-[#18181B] flex flex-col font-sans selection:bg-[#ECFDF5] selection:text-[#15803D]">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-lg bg-[#141b2b] border border-white/20 text-xs font-mono text-zinc-100 shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+        <div className="fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl bg-white border border-[#E6E5E0] text-xs font-medium text-[#18181B] shadow-[0_4px_12px_rgba(24,24,27,0.08)] flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
+          <span className="w-2 h-2 rounded-full bg-[#15803D] animate-ping" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Top Telemetry Header Bar */}
+      {/* Top Navigation Bar */}
       <TelemetryBar
         nanoStatus={nanoStatus}
         device={device}
@@ -308,13 +313,13 @@ export const App: React.FC = () => {
         onOpenDrawer={() => setIsDrawerOpen(true)}
         blueprintCount={cachedBlueprints.length}
         isFirebaseReady={isFirebaseReady}
-        onOpenWireDrawer={() => setIsWireDrawerOpen(true)}
+        onOpenPrivacyReceipt={() => setIsPrivacyReceiptOpen(true)}
         selectedScenarioId={selectedScenario.id}
         onSelectScenario={handleSelectScenario}
         onToggleOffline={() => {
           const newOnline = !device.online;
           setDevice((prev) => ({ ...prev, online: newOnline }));
-          showToast(newOnline ? 'Connected to Network' : 'Simulating Hospital Basement / Offline Mode');
+          showToast(newOnline ? 'Connected to Network' : 'Air-Gap Offline Engaged (Local Cache Only)');
         }}
       />
 
@@ -326,11 +331,11 @@ export const App: React.FC = () => {
         onToggleOffline={() => {
           const newOnline = !device.online;
           setDevice((prev) => ({ ...prev, online: newOnline }));
-          showToast(newOnline ? 'Connected to Network' : 'Simulating Hospital Basement / Offline Mode');
+          showToast(newOnline ? 'Connected to Network' : 'Air-Gap Offline Engaged (Local Cache Only)');
         }}
       />
 
-      {/* Calm 2-Step Progressive Workspace */}
+      {/* Main Viewport Workspace */}
       <RelayWorkspace
         files={files}
         activeFileId={activeFileId}
@@ -353,11 +358,19 @@ export const App: React.FC = () => {
         onToggleOffline={() => {
           const newOnline = !device.online;
           setDevice((prev) => ({ ...prev, online: newOnline }));
-          showToast(newOnline ? 'Connected to Network' : 'Simulating Hospital Basement / Offline Mode');
+          showToast(newOnline ? 'Connected to Network' : 'Air-Gap Offline Engaged (Local Cache Only)');
         }}
-        isWireDrawerOpen={isWireDrawerOpen}
-        onOpenWireDrawer={() => setIsWireDrawerOpen(true)}
-        onCloseWireDrawer={() => setIsWireDrawerOpen(false)}
+        selectedScenarioId={selectedScenario.id}
+      />
+
+      {/* Slide-Over "Privacy Receipt" Drawer */}
+      <PrivacyReceiptDrawer
+        isOpen={isPrivacyReceiptOpen}
+        onClose={() => setIsPrivacyReceiptOpen(false)}
+        topology={topology}
+        blueprint={blueprint}
+        telemetry={telemetry}
+        activeFileNames={files.map((f) => f.name)}
       />
 
       {/* Mobile / Companion Blueprint Drawer */}
@@ -374,4 +387,5 @@ export const App: React.FC = () => {
     </div>
   );
 };
+
 export default App;

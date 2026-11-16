@@ -43,19 +43,19 @@ export const ScenarioSelector: React.FC<ScenarioSelectorProps> = ({
   };
 
   return (
-    <div className="md:hidden w-full border-b border-white/[0.06] bg-[#0e1015] px-6 py-2.5">
+    <div className="md:hidden w-full border-b border-[#E6E5E0] bg-white px-4 py-2">
       <div className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-none">
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
           {BENCHMARK_SCENARIOS.map((scen) => {
             const isSelected = scen.id === selectedScenarioId;
             return (
               <button
                 key={scen.id}
                 onClick={() => onSelectScenario(scen)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all shrink-0 ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all shrink-0 ${
                   isSelected
-                    ? 'bg-[#181d29] text-white border border-white/10'
-                    : 'text-zinc-400 hover:text-zinc-200'
+                    ? 'bg-[#EFEFEA] text-[#18181B] border border-[#E6E5E0] font-semibold'
+                    : 'text-[#4B5563] hover:text-[#18181B]'
                 }`}
               >
                 {getIcon(scen.iconName)}
@@ -67,16 +67,18 @@ export const ScenarioSelector: React.FC<ScenarioSelectorProps> = ({
 
         <button
           onClick={onToggleOffline}
-          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-mono transition-all shrink-0 ${
+          className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all shrink-0 border ${
             !device.online
-              ? 'bg-amber-950/40 text-amber-300 border border-amber-500/30'
-              : 'text-zinc-400 hover:text-zinc-200'
+              ? 'bg-[#ECFDF5] text-[#15803D] border-[#A7F3D0]'
+              : 'text-[#6B7280] border-[#E6E5E0]'
           }`}
         >
-          {!device.online ? <WifiOff className="w-3 h-3 text-amber-400" /> : <Wifi className="w-3 h-3 text-zinc-500" />}
+          {!device.online ? <WifiOff className="w-3 h-3 text-[#15803D]" /> : <Wifi className="w-3 h-3 text-[#6B7280]" />}
           <span>{!device.online ? 'Offline' : 'Online'}</span>
         </button>
       </div>
     </div>
   );
 };
+
+export default ScenarioSelector;
