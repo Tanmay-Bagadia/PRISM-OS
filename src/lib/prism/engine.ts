@@ -256,6 +256,41 @@ function createDynamicBlueprint(topology: AbstractTopology, prompt: string): Rea
 }
 
 /**
+ * Synthesizes a structured ReasoningBlueprint on-device via Gemini Nano when offline or fallback.
+ */
+async function generateNanoBlueprint(
+  _topology: AbstractTopology,
+  goal: string,
+  topoString: string
+): Promise<ReasoningBlueprint | null> {
+  try {
+    const ai = getFirebaseAI();
+    const nanoModel: GenerativeModel = getGenerativeModel(ai, {
+      mode: InferenceMode.ONLY_ON_DEVICE,
+    });
+    const nanoPrompt = `Formulate a structured Reasoning Blueprint to achieve the goal: "${goal}".
+Output JSON conforming to prism-blueprint-v1: { "schema": "prism-blueprint-v1", "goal": "${goal}", "steps": [{ "id": string, "action": string, "inputs": string[], "output": string }] }
+Topology:
+${topoString}`;
+    const nanoResult = await nanoModel.generateContent(nanoPrompt);
+    const nanoJson = nanoResult.response.text();
+    const parsed = parseCleanJson<Partial<ReasoningBlueprint>>(nanoJson);
+
+    if (parsed && Array.isArray(parsed.steps)) {
+      parsed.schema = 'prism-blueprint-v1';
+      if (!parsed.goal) parsed.goal = goal;
+    }
+
+    if (parsed && parsed.schema === 'prism-blueprint-v1' && Array.isArray(parsed.steps)) {
+      return parsed as ReasoningBlueprint;
+    }
+  } catch {
+    // Non-blocking fallback to createDynamicBlueprint
+  }
+  return null;
+}
+
+/**
  * Extracts structured key-value pairs comparing raw local data against anonymized wire tokens.
  */
 function extractStructuredFieldComparisons(raw: string, scrubbed: string): Array<{
@@ -535,6 +570,7 @@ ${dualGroundingRows || '| Primary Document | Full Local File Grounded | [REDACTE
  */
 export async function runPrismPipeline(options: PrismRunOptions): Promise<PrismPipelineOutput> {
   const { rawContent, prompt, posture, device, thresholds } = options;
+  const goal = prompt;
   const decision = computeRoute(posture, device, thresholds);
 
   const telemetryList: StageTelemetry[] = [];
@@ -706,9 +742,12 @@ ${topoString}
       const jsonText = result.response.text();
       const parsed = parseCleanJson<Partial<ReasoningBlueprint>>(jsonText);
 
-      if (Array.isArray(parsed.steps)) {
+      if (parsed && Array.isArray(parsed.steps)) {
         parsed.schema = 'prism-blueprint-v1';
-        parsed.goal = parsed.goal || prompt;
+        if (!parsed.goal) parsed.goal = goal;
+      }
+
+      if (parsed && parsed.schema === 'prism-blueprint-v1' && Array.isArray(parsed.steps)) {
         blueprint = parsed as ReasoningBlueprint;
       } else {
         throw new Error('Cloud returned unexpected blueprint schema');
@@ -730,7 +769,11 @@ ${topoString}
       stage2Fallback = true;
       stage2InferenceSource = 'ON_DEVICE';
       stage2BytesSent = 0;
-      blueprint = createDynamicBlueprint(topology, prompt);
+      let nanoBp: ReasoningBlueprint | null = null;
+      if (decision.useNano) {
+        nanoBp = await generateNanoBlueprint(topology, goal, topoString);
+      }
+      blueprint = nanoBp || createDynamicBlueprint(topology, goal);
     }
   } else {
     // Offline / Vault Mode: Cache MISS + Local Dynamic Synthesis
@@ -738,7 +781,11 @@ ${topoString}
     stage2Fallback = true;
     stage2InferenceSource = 'ON_DEVICE';
     stage2BytesSent = 0;
-    blueprint = createDynamicBlueprint(topology, prompt);
+    let nanoBp: ReasoningBlueprint | null = null;
+    if (decision.useNano) {
+      nanoBp = await generateNanoBlueprint(topology, goal, topoString);
+    }
+    blueprint = nanoBp || createDynamicBlueprint(topology, goal);
   }
 
   const stage2Latency = Math.round(performance.now() - stage2Start);
