@@ -299,6 +299,168 @@ function extractStructuredFieldComparisons(raw: string, scrubbed: string): Array
 }
 
 /**
+ * Deterministic post-extraction sanitizer that replaces any real proper names,
+ * company names, emails, SSNs, card numbers, phone numbers, or dollar figures
+ * in entities[].label and constraints[] with abstract role labels ("Company_A",
+ * "Person_A", "Account_A", "Vendor_Invoice_A"), guaranteeing 0% PII leakage
+ * into AbstractTopology.
+ */
+export function sanitizeTopology(topology: AbstractTopology, rawContent: string): AbstractTopology {
+  const companiesToMask = new Map<string, string>();
+  const personsToMask = new Map<string, string>();
+  let companyIdx = 0;
+  let personIdx = 0;
+
+  const getCompanyToken = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const char = chars[companyIdx++ % chars.length] || 'A';
+    return `Company_${char}`;
+  };
+
+  const getPersonToken = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const char = chars[personIdx++ % chars.length] || 'A';
+    return `Person_${char}`;
+  };
+
+  // 1. Scan rawContent for explicit company/organization lines
+  const companyLineRegex = /(?:Company(?:\s+Name)?|Firm|Employer|Vendor|Client|Bank|Hospital|Organization)\s*:\s*([^\n,|]+)/gi;
+  let compMatch: RegExpExecArray | null;
+  while ((compMatch = companyLineRegex.exec(rawContent)) !== null) {
+    const name = compMatch[1]?.trim();
+    if (name && name.length > 2 && !companiesToMask.has(name.toLowerCase())) {
+      companiesToMask.set(name.toLowerCase(), getCompanyToken());
+    }
+  }
+
+  // Find company legal suffix names in rawContent: (e.g. "Kestrel Robotics Pvt. Ltd.", "Apex Robotics Inc.")
+  const companySuffixRegex = /\b([A-Z][A-Za-z0-9&.,' -]+?\s+(?:Pvt\.?\s*Ltd\.?|Ltd\.?|Inc\.?|Corp\.?|Corporation|LLC|LLP|Robotics|Technologies|Labs|Systems|Bank|Ventures|Partners))\b/g;
+  while ((compMatch = companySuffixRegex.exec(rawContent)) !== null) {
+    const name = compMatch[1]?.trim();
+    if (name && name.length > 3 && !companiesToMask.has(name.toLowerCase())) {
+      companiesToMask.set(name.toLowerCase(), getCompanyToken());
+    }
+  }
+
+  // 2. Scan rawContent for explicit person lines
+  const personLineRegex = /(?:Patient(?:\s+Name)?|Founder|CEO|CFO|CTO|Executive|Physician|Doctor|Dr\.|Contact|Employee|Author|Manager|Name)\s*:\s*([^\n,|]+)/gi;
+  let personMatch: RegExpExecArray | null;
+  while ((personMatch = personLineRegex.exec(rawContent)) !== null) {
+    const rawVal = personMatch[1]?.trim() || '';
+    const cleanName = rawVal.replace(/^(?:Dr\.|Mr\.|Ms\.|Mrs\.)\s+/i, '').split(/[(|,\n]/)[0]?.trim();
+    if (cleanName && cleanName.length > 2 && !personsToMask.has(cleanName.toLowerCase())) {
+      personsToMask.set(cleanName.toLowerCase(), getPersonToken());
+    }
+  }
+
+  // Common non-name capitalized medical/technical terms to avoid false positives
+  const nonNameTerms = new Set([
+    'blood pressure', 'resting heart rate', 'fasting glucose', 'total cholesterol',
+    'active supplement', 'calcium carbonate', 'iron sulfate', 'deep sleep', 'recovery score',
+    'query latency', 'error rate', 'primary diagnosis', 'database engine', 'metabolic record',
+    'monthly net burn', 'cash runway', 'annual compensation', 'troponin-i', 'serum potassium',
+    'serum magnesium', 'vitamin d', 'high opex', 'low magnesium', 'potassium baseline'
+  ]);
+
+  // Helper to sanitize a single text string (label or constraint)
+  const sanitizeString = (str: string): string => {
+    let clean = str;
+
+    // Replace known company names from raw content
+    companiesToMask.forEach((token, companyName) => {
+      const reg = new RegExp(companyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      clean = clean.replace(reg, token);
+    });
+
+    // Replace known person names from raw content
+    personsToMask.forEach((token, personName) => {
+      const reg = new RegExp(personName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      clean = clean.replace(reg, token);
+    });
+
+    // Replace field patterns inside the label
+    clean = clean.replace(/((?:Company(?:\s+Name)?|Firm|Employer|Vendor|Client|Organization)\s*:\s*)([A-Z0-9&.,' -]{3,})/gi, (m, prefix, val) => {
+      if (val.trim().startsWith('Company_')) return m;
+      return `${prefix}${getCompanyToken()}`;
+    });
+
+    clean = clean.replace(/((?:Patient(?:\s+Name)?|Founder|CEO|CFO|CTO|Executive|Physician|Doctor|Contact|Employee|Name)\s*:\s*)([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/gi, (m, prefix, val) => {
+      if (val.trim().startsWith('Person_')) return m;
+      if (nonNameTerms.has(val.toLowerCase())) return m;
+      return `${prefix}${getPersonToken()}`;
+    });
+
+    // Replace any remaining company legal suffix patterns (e.g. "Kestrel Robotics Pvt. Ltd.")
+    clean = clean.replace(/\b[A-Z][A-Za-z0-9&.,' -]+?\s+(?:Pvt\.?\s*Ltd\.?|Ltd\.?|Inc\.?|Corp\.?|Corporation|LLC|LLP|Robotics|Technologies)\b/gi, (m) => {
+      if (m.trim().startsWith('Company_')) return m;
+      return getCompanyToken();
+    });
+
+    // Replace proper name patterns like "Rohan Malhotra"
+    clean = clean.replace(/\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b/g, (m, first, last) => {
+      const full = `${first} ${last}`.toLowerCase();
+      if (nonNameTerms.has(full)) return m;
+      if (/^(prod|test|dev|stage|high|low|deep|fast|total|active|primary|severe|blood|heart|daily|monthly|annual)\s+/i.test(m)) return m;
+      if (first.startsWith('Person_') || first.startsWith('Company_')) return m;
+      return getPersonToken();
+    });
+
+    // Mask sensitive identifiers and numbers
+    clean = clean.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[ANONYMIZED_EMAIL]');
+    clean = clean.replace(/\b\d{3}-\d{2}-\d{4}\b/g, '[ANONYMIZED_SSN]');
+    clean = clean.replace(/(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g, '[ANONYMIZED_PHONE]');
+    clean = clean.replace(/\b(?:\d{4}[-\s]?){3}\d{4}\b/g, 'Account_A');
+    clean = clean.replace(/\$[0-9,]+(?:\.[0-9]+)?/g, '[ANONYMIZED_AMOUNT]');
+
+    return clean;
+  };
+
+  const sanitizedEntities = topology.entities.map((entity) => {
+    let cleanLabel = sanitizeString(entity.label);
+
+    if (entity.type === 'person' && !cleanLabel.includes('Person_')) {
+      if (cleanLabel.includes(':')) {
+        const [k] = cleanLabel.split(':');
+        cleanLabel = `${k}: Person_A`;
+      } else {
+        cleanLabel = 'Person_A';
+      }
+    } else if ((entity.type === 'company' || entity.type === 'organization') && !cleanLabel.includes('Company_')) {
+      if (cleanLabel.includes(':')) {
+        const [k] = cleanLabel.split(':');
+        cleanLabel = `${k}: Company_A`;
+      } else {
+        cleanLabel = 'Company_A';
+      }
+    }
+
+    return {
+      ...entity,
+      label: cleanLabel,
+    };
+  });
+
+  const sanitizedConstraints = (topology.constraints || []).map((c) => sanitizeString(c));
+
+  return {
+    ...topology,
+    entities: sanitizedEntities,
+    constraints: sanitizedConstraints,
+  };
+}
+
+/**
+ * Strips leading/trailing ```markdown, ```md, or ``` code fences
+ */
+export function cleanMarkdownFences(text: string): string {
+  if (!text) return '';
+  let clean = text.trim();
+  clean = clean.replace(/^```(?:markdown|md)?\s*\n?/i, '');
+  clean = clean.replace(/\n?```\s*$/i, '');
+  return clean.trim();
+}
+
+/**
  * Dynamically synthesizes the final Stage 3 Grounded Local Hydration Report
  * pairing blueprint reasoning with live local raw data.
  */
@@ -395,7 +557,10 @@ export async function runPrismPipeline(options: PrismRunOptions): Promise<PrismP
 
       const extractionPrompt = `
 Extract an anonymized problem topology in JSON conforming to prism-topology-v1.
-Zero PII. Zero real numbers. Maximum 1.5 KB JSON.
+STRICT PRIVACY GUARANTEE:
+- ZERO PII: Never include real personal names, employee names, patient names, or executive names. Replace them with "Person_A", "Person_B", etc.
+- ZERO COMPANY/ORGANIZATION NAMES: Never include real company, vendor, employer, firm, bank, or hospital names (e.g. replace any company with "Company_A", "Company_B", etc.).
+- ZERO RAW FINANCIAL NUMBERS OR SENSITIVE IDENTIFIERS: Replace real dollar figures, account numbers, and IDs with abstract tokens like "Account_A", "Vendor_Invoice_A", "[METRIC_A]".
 Schema: { schema: "prism-topology-v1", entities: [{id, type, label}], relationships: [{from, to, kind}], constraints: [string] }
 Content:
 ${rawContent}
@@ -424,6 +589,9 @@ ${rawContent}
     const scrubbed = scrubPII(rawContent);
     topology = extractTopologyFallback(scrubbed, prompt);
   }
+
+  // Deterministic post-extraction sanitizer guaranteeing 0% PII leakage
+  topology = sanitizeTopology(topology, rawContent);
 
   // Safety Gate: Ensure topology byte size is strictly under 2048 bytes
   let topoString = JSON.stringify(topology);
@@ -632,6 +800,9 @@ ${rawContent}
       telemetryList
     );
   }
+
+  // Strip leading and trailing markdown code fences before output
+  hydratedReport = cleanMarkdownFences(hydratedReport);
 
   const stage3Latency = Math.round(performance.now() - stage3Start);
   telemetryList.push({

@@ -1,6 +1,7 @@
 import React from 'react';
 import { RotateCw, Activity } from 'lucide-react';
 import type { AbstractTopology, StageTelemetry } from '../types/prism';
+import { cleanMarkdownFences } from '../lib/prism/engine';
 
 export interface KeyIndicatorData {
   id: string;
@@ -46,7 +47,8 @@ export function extractKeyIndicators(
   topology?: AbstractTopology | null
 ): KeyIndicatorData[] {
   const candidates: ExtractedCandidate[] = [];
-  const combinedText = `${hydratedReport || ''}\n\n${rawContent || ''}`;
+  const cleanReport = cleanMarkdownFences(hydratedReport || '');
+  const combinedText = `${cleanReport}\n\n${rawContent || ''}`;
 
   if (!combinedText.trim()) {
     return [];

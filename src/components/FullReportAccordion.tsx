@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
+import { cleanMarkdownFences } from '../lib/prism/engine';
 
 interface FullReportAccordionProps {
   hydratedReport: string;
@@ -285,7 +286,7 @@ export const FullReportAccordion: React.FC<FullReportAccordionProps> = ({
         </summary>
 
         <div className="p-6 pt-2 border-t border-[#F0EFEA] bg-white">
-          {renderMarkdown(hydratedReport)}
+          {renderMarkdown(cleanMarkdownFences(hydratedReport))}
         </div>
       </details>
     </section>

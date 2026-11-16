@@ -9,7 +9,7 @@ import type {
   StageTelemetry,
   NanoAvailability,
 } from './types/prism';
-import { runPrismPipeline, computeTopologyHash } from './lib/prism/engine';
+import { runPrismPipeline, computeTopologyHash, cleanMarkdownFences } from './lib/prism/engine';
 import { checkNanoAvailability, monitorNanoDownload } from './lib/prism/nanoStatus';
 import {
   initializeFirebase,
@@ -273,7 +273,7 @@ export const App: React.FC = () => {
 
       setTopology(result.topology);
       setBlueprint(result.blueprint);
-      setHydratedReport(result.hydratedReport);
+      setHydratedReport(cleanMarkdownFences(result.hydratedReport));
       setTelemetry(result.telemetry);
 
       // Record to local blueprint cache list
