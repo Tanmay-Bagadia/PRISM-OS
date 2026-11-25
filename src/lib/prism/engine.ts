@@ -23,6 +23,7 @@ import type {
   InferenceSource,
   CacheStatus,
 } from '../../types/prism';
+import type { DiffTopology } from '../../types/longitudinal';
 import {
   getFirebaseAI,
   getFirebaseFirestore,
@@ -37,6 +38,7 @@ export interface PrismRunOptions {
   posture: CognitivePosture;
   device: DeviceContext;
   thresholds: RemoteThresholds;
+  diffTopology?: DiffTopology | null;
   onStageProgress?: (stageIndex: number, stageName: string) => void;
 }
 
@@ -753,13 +755,17 @@ ${rawContent}
         },
       });
 
+      const diffSection = options.diffTopology && options.diffTopology.deltas.length > 0
+        ? `\nLongitudinal Trend Diff (prism-diff-v1, zero PII):\n${JSON.stringify(options.diffTopology)}\nAdapt your 3-step blueprint to address these observed metric trends.`
+        : '';
+
       const cloudPrompt = `
 You are the PRISM Cloud Blueprint Reasoner.
 You are given an abstract entity/relationship topology with zero PII or raw numbers.
 Formulate a structured Reasoning Blueprint to achieve the goal: "${prompt}".
 You MUST explicitly set "schema": "prism-blueprint-v1" in the output JSON.
 Topology:
-${topoString}
+${topoString}${diffSection}
 `;
       const result = await cloudModel.generateContent(cloudPrompt);
       stage2InferenceSource = (result.response.inferenceSource as InferenceSource) || 'IN_CLOUD';
@@ -910,6 +916,22 @@ ${rawContent}
     fallbackUsed: stage3Fallback,
     payloadPreview: `${hydratedReport.slice(0, 90)}...`,
   });
+
+  // Explicit transparency notice whenever Local AI or Cloud AI was not used
+  const aiNotices: string[] = [];
+  if (stage1Fallback || stage3Fallback) {
+    aiNotices.push(
+      '- **Local AI Notice:** Local AI (Gemini Nano) was not used (unavailable or bypassed on this device); deterministic on-device processing was used instead.'
+    );
+  }
+  if (stage2InferenceSource !== 'IN_CLOUD') {
+    aiNotices.push(
+      `- **Cloud AI Notice:** Cloud AI was not used for Stage 2 blueprint generation (${stage2CacheStatus === 'hit' ? 'served from local cache' : 'local/offline execution'}).`
+    );
+  }
+  if (aiNotices.length > 0) {
+    hydratedReport = `${hydratedReport}\n\n## AI Execution Transparency\n${aiNotices.join('\n')}`;
+  }
 
   return {
     topology,
