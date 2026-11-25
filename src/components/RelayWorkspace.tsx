@@ -48,6 +48,7 @@ interface RelayWorkspaceProps {
   onFollowUpOffline: (customPrompt?: string) => void;
   isOfflineMode: boolean;
   onToggleOffline?: () => void;
+  onOpenSafeExport?: () => void;
 }
 
 /**
@@ -114,6 +115,7 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
   hydratedReport,
   telemetry,
   onFollowUpOffline,
+  onOpenSafeExport,
 }) => {
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [modalFile, setModalFile] = React.useState<ScenarioFile | null>(null);
@@ -585,6 +587,7 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
           <FullReportAccordion
             hydratedReport={hydratedReport}
             isRunning={isRunning}
+            onOpenSafeExport={onOpenSafeExport}
           />
 
           {/* Floating Bottom Vault Bar for Offline Follow-Ups */}

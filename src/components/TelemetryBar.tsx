@@ -4,6 +4,7 @@ import {
   Infinity as InfinityIcon,
   ShieldCheck,
   RotateCcw,
+  FileLock2,
 } from 'lucide-react';
 
 interface TelemetryBarProps {
@@ -17,6 +18,7 @@ interface TelemetryBarProps {
   blueprintCount?: number;
   isFirebaseReady?: boolean;
   onOpenPrivacyReceipt: () => void;
+  onOpenSafeExport?: () => void;
   onToggleOffline: () => void;
   onClearSession?: () => void;
   hasActiveSession?: boolean;
@@ -26,6 +28,7 @@ export const TelemetryBar: React.FC<TelemetryBarProps> = ({
   nanoStatus,
   device,
   onOpenPrivacyReceipt,
+  onOpenSafeExport,
   onToggleOffline,
   onClearSession,
   hasActiveSession = false,
@@ -113,6 +116,18 @@ export const TelemetryBar: React.FC<TelemetryBarProps> = ({
               />
             </button>
           </div>
+
+          {/* Safe Export Action Button */}
+          {onOpenSafeExport && (
+            <button
+              onClick={onOpenSafeExport}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E6E5E0] hover:bg-[#ECFDF5] hover:border-[#A7F3D0] rounded-lg text-[#18181B] text-xs font-medium shadow-[0_1px_2px_0_rgba(24,24,27,0.03)] active:scale-[0.99] transition-all cursor-pointer"
+              title="Open Safe-to-Share Redacted Export & Local Action Letter"
+            >
+              <FileLock2 className="w-3.5 h-3.5 text-[#15803D]" />
+              <span className="hidden sm:inline">Safe Export</span>
+            </button>
+          )}
 
           {/* Privacy Receipt Action Button (Triggers Drawer) */}
           <button

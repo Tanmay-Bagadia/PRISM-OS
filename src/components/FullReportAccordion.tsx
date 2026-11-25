@@ -7,17 +7,20 @@ import {
   Check,
   ShieldCheck,
   Sparkles,
+  FileLock2,
 } from 'lucide-react';
 import { cleanMarkdownFences } from '../lib/prism/engine';
 
 interface FullReportAccordionProps {
   hydratedReport: string;
   isRunning: boolean;
+  onOpenSafeExport?: () => void;
 }
 
 export const FullReportAccordion: React.FC<FullReportAccordionProps> = ({
   hydratedReport,
   isRunning,
+  onOpenSafeExport,
 }) => {
   const [copied, setCopied] = React.useState(false);
 
@@ -281,6 +284,20 @@ export const FullReportAccordion: React.FC<FullReportAccordionProps> = ({
               <Download className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Export</span>
             </button>
+            {onOpenSafeExport && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenSafeExport();
+                }}
+                className="px-2.5 py-1.5 rounded-lg border border-[#A7F3D0] bg-[#ECFDF5] hover:bg-[#D1FAE5] text-[#15803D] transition-colors text-xs font-medium flex items-center gap-1 cursor-pointer"
+                title="Redact PII & Draft Local Action Letter"
+              >
+                <FileLock2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Safe Export</span>
+              </button>
+            )}
             <ChevronDown className="w-4 h-4 text-[#6B7280] group-open:rotate-180 transition-transform ml-1" />
           </div>
         </summary>
