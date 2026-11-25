@@ -2,6 +2,7 @@ import React from 'react';
 import { RotateCw, Activity } from 'lucide-react';
 import type { AbstractTopology, StageTelemetry } from '../types/prism';
 import { cleanMarkdownFences } from '../lib/prism/engine';
+import { ExecutionStatusPill } from './ExecutionStatusBanner';
 
 export interface KeyIndicatorData {
   id: string;
@@ -23,6 +24,7 @@ interface KeyIndicatorsGridProps {
   hydratedReport?: string;
   topology: AbstractTopology | null;
   stage3Telemetry?: StageTelemetry;
+  telemetry?: StageTelemetry[] | null;
   isRunning: boolean;
 }
 
@@ -289,6 +291,7 @@ export const KeyIndicatorsGrid: React.FC<KeyIndicatorsGridProps> = ({
   hydratedReport,
   topology,
   stage3Telemetry,
+  telemetry,
   isRunning,
 }) => {
   // Dynamically compute real indicators from hydratedReport and rawContent
@@ -335,9 +338,12 @@ export const KeyIndicatorsGrid: React.FC<KeyIndicatorsGridProps> = ({
           </p>
         </div>
         {(topology || hydratedReport) && (
-          <div className="flex items-center gap-1.5 text-xs text-[#6B7280]">
-            <RotateCw className={`w-3.5 h-3.5 text-[#15803D] ${isRunning ? 'animate-spin' : ''}`} />
-            <span className="tabular-nums">Evaluated locally in {latencyDisplay}ms</span>
+          <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-[#6B7280]">
+            <ExecutionStatusPill telemetry={telemetry} />
+            <div className="flex items-center gap-1.5">
+              <RotateCw className={`w-3.5 h-3.5 text-[#15803D] ${isRunning ? 'animate-spin' : ''}`} />
+              <span className="tabular-nums">Evaluated locally in {latencyDisplay}ms</span>
+            </div>
           </div>
         )}
       </div>

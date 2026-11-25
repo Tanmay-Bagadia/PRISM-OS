@@ -22,6 +22,7 @@ import { RelayWorkspace } from './components/RelayWorkspace';
 import { PrivacyReceiptDrawer } from './components/PrivacyReceiptDrawer';
 import { SafeExportModal } from './components/SafeExportModal';
 import { HistoryTimelineDrawer } from './components/HistoryTimelineDrawer';
+import { ExecutionToast, deriveExecutionMode } from './components/ExecutionStatusBanner';
 import {
   MobileBlueprintDrawer,
   type CachedBlueprintRecord,
@@ -88,11 +89,24 @@ export const App: React.FC = () => {
   const [metricDeltas, setMetricDeltas] = React.useState<MetricDelta[]>([]);
   const [comparedSession, setComparedSession] = React.useState<VaultSession | null>(null);
   const [activeDiffTopology, setActiveDiffTopology] = React.useState<DiffTopology | null>(null);
-  const [toastMessage, setToastMessage] = React.useState<string | null>(null);
+  const [toastState, setToastState] = React.useState<{
+    message: string;
+    dotColor?: string;
+    showReceiptLink?: boolean;
+  } | null>(null);
+  const toastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+  const showToast = (
+    msg: string,
+    opts?: { dotColor?: string; showReceiptLink?: boolean; durationMs?: number }
+  ) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastState({
+      message: msg,
+      dotColor: opts?.dotColor,
+      showReceiptLink: opts?.showReceiptLink,
+    });
+    toastTimerRef.current = setTimeout(() => setToastState(null), opts?.durationMs ?? 3500);
   };
 
   // ─── Lifecycle: Firebase Init & Nano Monitoring ───────────────────────
@@ -345,11 +359,18 @@ export const App: React.FC = () => {
         ];
       });
 
-      const stage2 = result.telemetry[1];
-      if (stage2.cacheStatus === 'hit') {
-        showToast(`⚡ Stage 2 Firestore Offline Cache HIT: ${stage2.latencyMs}ms!`);
+      const execMode = deriveExecutionMode(result.telemetry);
+      if (execMode) {
+        showToast(execMode.toastMessage, {
+          dotColor: execMode.dotColor,
+          showReceiptLink: true,
+          durationMs: 5000,
+        });
       } else {
-        showToast(`✨ PRISM Pipeline Complete — 0 raw bytes sent to cloud!`);
+        showToast(`PRISM Pipeline Complete — 0 raw bytes sent to cloud.`, {
+          showReceiptLink: true,
+          durationMs: 5000,
+        });
       }
     } catch (err: unknown) {
       console.error('Pipeline execution error:', err);
@@ -424,13 +445,14 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#F7F7F5] text-[#18181B] flex flex-col font-sans selection:bg-[#ECFDF5] selection:text-[#15803D] pb-28 sm:pb-36">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl bg-white border border-[#E6E5E0] text-xs font-medium text-[#18181B] shadow-[0_4px_12px_rgba(24,24,27,0.08)] flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
-          <span className="w-2 h-2 rounded-full bg-[#15803D] animate-ping" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
+      {/* Dismissible Execution Status Toast */}
+      <ExecutionToast
+        message={toastState?.message || null}
+        dotColor={toastState?.dotColor}
+        showReceiptLink={toastState?.showReceiptLink}
+        onViewReceipt={() => setIsPrivacyReceiptOpen(true)}
+        onDismiss={() => setToastState(null)}
+      />
 
       {/* Top Navigation Bar: Clean Logo + Status on Left, Offline + Receipt on Right */}
       <TelemetryBar

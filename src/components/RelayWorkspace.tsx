@@ -686,6 +686,7 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
             hydratedReport={hydratedReport}
             topology={topology}
             stage3Telemetry={telemetry?.[2]}
+            telemetry={telemetry}
             isRunning={isRunning}
           />
 
