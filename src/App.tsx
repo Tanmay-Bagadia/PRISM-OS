@@ -21,10 +21,23 @@ import { TelemetryBar } from './components/TelemetryBar';
 import { RelayWorkspace } from './components/RelayWorkspace';
 import { PrivacyReceiptDrawer } from './components/PrivacyReceiptDrawer';
 import { SafeExportModal } from './components/SafeExportModal';
+import { HistoryTimelineDrawer } from './components/HistoryTimelineDrawer';
 import {
   MobileBlueprintDrawer,
   type CachedBlueprintRecord,
 } from './components/MobileBlueprintDrawer';
+import type { VaultSession, MetricDelta, DiffTopology } from './types/longitudinal';
+import {
+  saveVaultSession,
+  listVaultSessions,
+  deleteVaultSession,
+  clearVaultSessions,
+} from './lib/storage/localHistoryVault';
+import {
+  extractMetricsFromReport,
+  computeMetricDeltas,
+  buildAnonymizedDiffTopology,
+} from './lib/prism/diffEngine';
 
 export const App: React.FC = () => {
   // ─── Firebase & Nano Initialization State ─────────────────────────────
@@ -68,8 +81,13 @@ export const App: React.FC = () => {
   // ─── Privacy Receipt & Blueprint Drawers State ─────────────────────────
   const [isPrivacyReceiptOpen, setIsPrivacyReceiptOpen] = React.useState(false);
   const [isSafeExportOpen, setIsSafeExportOpen] = React.useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
   const [cachedBlueprints, setCachedBlueprints] = React.useState<CachedBlueprintRecord[]>([]);
+  const [vaultSessions, setVaultSessions] = React.useState<VaultSession[]>([]);
+  const [metricDeltas, setMetricDeltas] = React.useState<MetricDelta[]>([]);
+  const [comparedSession, setComparedSession] = React.useState<VaultSession | null>(null);
+  const [activeDiffTopology, setActiveDiffTopology] = React.useState<DiffTopology | null>(null);
   const [toastMessage, setToastMessage] = React.useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -89,6 +107,11 @@ export const App: React.FC = () => {
       .catch((err) => {
         console.warn('[PRISM-OS] Firebase initialization deferred:', err);
       });
+
+    // 1b. Load locally persisted IndexedDB longitudinal sessions
+    listVaultSessions()
+      .then((sessions) => setVaultSessions(sessions))
+      .catch(() => {});
 
     // 2. Initial check & subscribe to Chrome Gemini Nano 4 availability & progress
     checkNanoAvailability().then((initial) => {
@@ -231,12 +254,20 @@ export const App: React.FC = () => {
     setBlueprint(null);
     setHydratedReport('');
     setTelemetry(null);
+    setMetricDeltas([]);
+    setComparedSession(null);
+    setActiveDiffTopology(null);
     setIsPrivacyReceiptOpen(false);
-    showToast('Workspace reset. New private session started.');
+    void clearVaultSessions().then(() => setVaultSessions([]));
+    showToast('Workspace & local history reset. New private session started.');
   };
 
   // ─── Execute PRISM Pipeline ───────────────────────────────────────────
-  const executePipeline = async (overrideDevice?: DeviceContext, overridePrompt?: string) => {
+  const executePipeline = async (
+    overrideDevice?: DeviceContext,
+    overridePrompt?: string,
+    overrideDiffTopology?: DiffTopology | null
+  ) => {
     // Combine all attached files into one comprehensive raw content context
     const validFiles = files.filter((f) => f.content && f.content.trim().length > 0);
     const combinedRawContent = validFiles
@@ -270,13 +301,35 @@ export const App: React.FC = () => {
         posture,
         device: activeDevice,
         thresholds,
+        diffTopology: overrideDiffTopology !== undefined ? overrideDiffTopology : activeDiffTopology,
         onStageProgress: (stageIndex) => setActiveStageIndex(stageIndex),
       });
 
+      const cleanReport = cleanMarkdownFences(result.hydratedReport);
       setTopology(result.topology);
       setBlueprint(result.blueprint);
-      setHydratedReport(cleanMarkdownFences(result.hydratedReport));
+      setHydratedReport(cleanReport);
       setTelemetry(result.telemetry);
+
+      // Auto-save completed run to local IndexedDB Vault
+      const extractedMetrics = extractMetricsFromReport(cleanReport, combinedRawContent);
+      const inferredDomain =
+        result.topology.entities[0]?.type?.replace(/_/g, ' ') ||
+        validFiles[0]?.category ||
+        'general';
+      const newSession: VaultSession = {
+        id: `session_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        timestamp: new Date().toISOString(),
+        title: validFiles[0]?.name || activePrompt.slice(0, 48),
+        domainTag: inferredDomain,
+        metrics: extractedMetrics,
+        rawSnippet: combinedRawContent.slice(0, 180),
+        hydratedReport: cleanReport,
+      };
+      void saveVaultSession(newSession)
+        .then(() => listVaultSessions())
+        .then((updated) => setVaultSessions(updated))
+        .catch(() => {});
 
       // Record to local blueprint cache list
       const hash = await computeTopologyHash(result.topology);
@@ -318,6 +371,55 @@ export const App: React.FC = () => {
     await executePipeline(offlineDevice, customPrompt);
   };
 
+  // ─── Longitudinal History & Comparison Handlers ───────────────────────
+  const handleDeleteVaultSession = (id: string) => {
+    void deleteVaultSession(id)
+      .then(() => listVaultSessions())
+      .then((updated) => setVaultSessions(updated))
+      .catch(() => {});
+    if (comparedSession?.id === id) {
+      setComparedSession(null);
+      setMetricDeltas([]);
+      setActiveDiffTopology(null);
+    }
+  };
+
+  const handleClearAllVault = () => {
+    void clearVaultSessions()
+      .then(() => setVaultSessions([]))
+      .catch(() => {});
+    setComparedSession(null);
+    setMetricDeltas([]);
+    setActiveDiffTopology(null);
+    showToast('Cleared all local IndexedDB history');
+  };
+
+  const handleCompareWithCurrent = async (pastSession: VaultSession) => {
+    const combinedRawContent = files
+      .filter((f) => f.content && f.content.trim().length > 0)
+      .map((f) => (files.length > 1 ? `=== FILE: ${f.name} ===\n${f.content.trim()}` : f.content.trim()))
+      .join('\n\n');
+
+    const currentMetrics = extractMetricsFromReport(hydratedReport, combinedRawContent);
+    const deltas = computeMetricDeltas(pastSession.metrics, currentMetrics);
+    const diffTopo = buildAnonymizedDiffTopology(
+      deltas,
+      `Comparing ${pastSession.timestamp.slice(0, 10)} vs current`
+    );
+
+    setComparedSession(pastSession);
+    setMetricDeltas(deltas);
+    setActiveDiffTopology(diffTopo);
+    setIsHistoryOpen(false);
+
+    if (deltas.length > 0 && prompt.trim()) {
+      showToast(`Computed ${deltas.length} longitudinal metric delta(s). Adapting blueprint...`);
+      await executePipeline(undefined, undefined, diffTopo);
+    } else {
+      showToast(`Compared against "${pastSession.title}"`);
+    }
+  };
+
   const hasActiveSession = files.length > 0 || prompt.length > 0 || Boolean(topology || blueprint);
 
   return (
@@ -343,6 +445,8 @@ export const App: React.FC = () => {
         isFirebaseReady={isFirebaseReady}
         onOpenPrivacyReceipt={() => setIsPrivacyReceiptOpen(true)}
         onOpenSafeExport={() => setIsSafeExportOpen(true)}
+        onOpenHistory={() => setIsHistoryOpen(true)}
+        historyCount={vaultSessions.length}
         onToggleOffline={() => {
           const newOnline = !device.online;
           setDevice((prev) => ({ ...prev, online: newOnline }));
@@ -374,6 +478,14 @@ export const App: React.FC = () => {
         onFollowUpOffline={handleFollowUpOffline}
         isOfflineMode={!device.online}
         onOpenSafeExport={() => setIsSafeExportOpen(true)}
+        metricDeltas={metricDeltas}
+        comparedSessionTitle={comparedSession?.title || null}
+        onClearComparison={() => {
+          setComparedSession(null);
+          setMetricDeltas([]);
+          setActiveDiffTopology(null);
+        }}
+        onReplanWithTrend={() => executePipeline(undefined, undefined, activeDiffTopology)}
         onToggleOffline={() => {
           const newOnline = !device.online;
           setDevice((prev) => ({ ...prev, online: newOnline }));
@@ -401,6 +513,18 @@ export const App: React.FC = () => {
         hydratedReport={hydratedReport}
         topology={topology}
         documentTitle={files[0]?.name || 'prism-document'}
+      />
+
+      {/* Local Longitudinal History & Trends Drawer */}
+      <HistoryTimelineDrawer
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        sessions={vaultSessions}
+        onDeleteSession={handleDeleteVaultSession}
+        onClearAll={handleClearAllVault}
+        onCompareWithCurrent={handleCompareWithCurrent}
+        canCompare={Boolean(hydratedReport || files.some((f) => f.content.trim().length > 0))}
+        activeComparedSessionId={comparedSession?.id || null}
       />
 
       {/* Mobile / Companion Blueprint Drawer */}
