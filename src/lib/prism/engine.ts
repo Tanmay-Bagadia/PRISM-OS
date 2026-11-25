@@ -8,7 +8,9 @@ import {
   collection,
   doc,
   getDoc,
+  getDocFromCache,
   setDoc,
+  type DocumentReference,
 } from 'firebase/firestore';
 import type {
   CognitivePosture,
@@ -253,6 +255,45 @@ function createDynamicBlueprint(topology: AbstractTopology, prompt: string): Rea
     goal: promptClean,
     steps,
   };
+}
+
+/**
+ * Reads a cached ReasoningBlueprint from Firestore local cache first (instant, zero network hang),
+ * optionally falling back to server fetch with a bounded timeout when online.
+ */
+async function readCachedBlueprint(
+  blueprintDocRef: DocumentReference,
+  allowNetwork: boolean
+): Promise<ReasoningBlueprint | null> {
+  try {
+    const cacheSnap = await getDocFromCache(blueprintDocRef);
+    if (cacheSnap.exists()) {
+      const data = cacheSnap.data() as ReasoningBlueprint;
+      if (data && data.schema === 'prism-blueprint-v1' && Array.isArray(data.steps)) {
+        return data;
+      }
+    }
+  } catch {
+    // Not in local cache yet
+  }
+
+  if (!allowNetwork) return null;
+
+  try {
+    const snap = await Promise.race([
+      getDoc(blueprintDocRef),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
+    ]);
+    if (snap && snap.exists()) {
+      const data = snap.data() as ReasoningBlueprint;
+      if (data && data.schema === 'prism-blueprint-v1' && Array.isArray(data.steps)) {
+        return data;
+      }
+    }
+  } catch {
+    // Firestore cache read is resilient and non-blocking
+  }
+  return null;
 }
 
 /**
@@ -658,34 +699,18 @@ ${rawContent}
   let stage2CacheStatus: CacheStatus = 'none';
   let stage2Fallback = false;
 
-  const topologyHash = await computeTopologyHash(topology);
+  const topologyHash = await computeTopologyHash({
+    ...topology,
+    constraints: [...topology.constraints, `goal:${goal}`],
+  });
   const topologyByteLength = new TextEncoder().encode(topoString).length;
 
   const db = getFirebaseFirestore();
   const blueprintDocRef = doc(collection(db, 'blueprints'), topologyHash);
 
-  // Check Firestore offline/online cache first
-  let cachedBlueprintData: ReasoningBlueprint | null = null;
-  try {
-    const cachedSnap = await getDoc(blueprintDocRef);
-    if (cachedSnap.exists()) {
-      const data = cachedSnap.data() as ReasoningBlueprint;
-      if (data && data.schema === 'prism-blueprint-v1' && Array.isArray(data.steps)) {
-        cachedBlueprintData = data;
-      }
-    }
-  } catch {
-    // Firestore cache read is resilient and non-blocking
-  }
-
-  if (cachedBlueprintData) {
-    // Cache HIT: Zero latency, zero cloud bytes
-    blueprint = cachedBlueprintData;
-    stage2CacheStatus = 'hit';
-    stage2InferenceSource = 'ON_DEVICE';
-    stage2BytesSent = 0;
-  } else if (decision.useCloud) {
-    // Cache MISS: Transmit abstract topology to Cloud Gemini via Firebase AI Logic SDK
+  if (decision.useCloud) {
+    // Cloud requested (Smart Hybrid / Deep Analysis while online):
+    // Always invoke Cloud Gemini first rather than short-circuiting on Firestore cache
     stage2CacheStatus = 'miss';
     stage2BytesSent = topologyByteLength;
 
@@ -753,19 +778,54 @@ ${topoString}
         throw new Error('Cloud returned unexpected blueprint schema');
       }
 
-      // Persist to Firestore cache asynchronously (enables offline reuse)
-      try {
-        await setDoc(blueprintDocRef, {
-          ...blueprint,
-          topologyHash,
-          cachedAt: Date.now(),
-        });
-      } catch {
+      // Persist to Firestore cache non-blocking for future offline fallback
+      void setDoc(blueprintDocRef, {
+        ...blueprint,
+        topologyHash,
+        cachedAt: Date.now(),
+      }).catch(() => {
         // Cache persistence write warning ignored
-      }
+      });
     } catch (err) {
       console.error('[PRISM Stage 2 Cloud Error]:', err);
-      // Cloud generation failed or offline -> fallback to local dynamic blueprint generator
+      // Cloud generation failed -> try local Firestore cache, then local Nano, then dynamic blueprint
+      stage2Fallback = true;
+      stage2InferenceSource = 'ON_DEVICE';
+      stage2BytesSent = 0;
+
+      const cachedFallback = await readCachedBlueprint(blueprintDocRef, false);
+      if (cachedFallback) {
+        blueprint = cachedFallback;
+        stage2CacheStatus = 'hit';
+      } else {
+        let nanoBp: ReasoningBlueprint | null = null;
+        if (decision.useNano) {
+          nanoBp = await generateNanoBlueprint(topology, goal, topoString);
+        }
+        blueprint = nanoBp || createDynamicBlueprint(topology, goal);
+      }
+    }
+  } else if (posture === 'vault') {
+    // Vault Mode: Pure local execution, zero Firestore / network calls
+    stage2CacheStatus = 'none';
+    stage2Fallback = true;
+    stage2InferenceSource = 'ON_DEVICE';
+    stage2BytesSent = 0;
+    let nanoBp: ReasoningBlueprint | null = null;
+    if (decision.useNano) {
+      nanoBp = await generateNanoBlueprint(topology, goal, topoString);
+    }
+    blueprint = nanoBp || createDynamicBlueprint(topology, goal);
+  } else {
+    // Offline / Constrained Mode: Check local Firestore cache first, then local synthesis
+    const cachedBlueprintData = await readCachedBlueprint(blueprintDocRef, false);
+    if (cachedBlueprintData) {
+      blueprint = cachedBlueprintData;
+      stage2CacheStatus = 'hit';
+      stage2InferenceSource = 'ON_DEVICE';
+      stage2BytesSent = 0;
+    } else {
+      stage2CacheStatus = 'miss';
       stage2Fallback = true;
       stage2InferenceSource = 'ON_DEVICE';
       stage2BytesSent = 0;
@@ -775,17 +835,6 @@ ${topoString}
       }
       blueprint = nanoBp || createDynamicBlueprint(topology, goal);
     }
-  } else {
-    // Offline / Vault Mode: Cache MISS + Local Dynamic Synthesis
-    stage2CacheStatus = 'miss';
-    stage2Fallback = true;
-    stage2InferenceSource = 'ON_DEVICE';
-    stage2BytesSent = 0;
-    let nanoBp: ReasoningBlueprint | null = null;
-    if (decision.useNano) {
-      nanoBp = await generateNanoBlueprint(topology, goal, topoString);
-    }
-    blueprint = nanoBp || createDynamicBlueprint(topology, goal);
   }
 
   const stage2Latency = Math.round(performance.now() - stage2Start);
