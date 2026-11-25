@@ -5,6 +5,7 @@ import {
   ShieldCheck,
   RotateCcw,
   FileLock2,
+  History,
 } from 'lucide-react';
 
 interface TelemetryBarProps {
@@ -19,6 +20,8 @@ interface TelemetryBarProps {
   isFirebaseReady?: boolean;
   onOpenPrivacyReceipt: () => void;
   onOpenSafeExport?: () => void;
+  onOpenHistory?: () => void;
+  historyCount?: number;
   onToggleOffline: () => void;
   onClearSession?: () => void;
   hasActiveSession?: boolean;
@@ -29,6 +32,8 @@ export const TelemetryBar: React.FC<TelemetryBarProps> = ({
   device,
   onOpenPrivacyReceipt,
   onOpenSafeExport,
+  onOpenHistory,
+  historyCount = 0,
   onToggleOffline,
   onClearSession,
   hasActiveSession = false,
@@ -116,6 +121,21 @@ export const TelemetryBar: React.FC<TelemetryBarProps> = ({
               />
             </button>
           </div>
+
+          {/* History & Trends Action Button */}
+          {onOpenHistory && (
+            <button
+              onClick={onOpenHistory}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E6E5E0] hover:bg-[#F7F7F5] rounded-lg text-[#18181B] text-xs font-medium shadow-[0_1px_2px_0_rgba(24,24,27,0.03)] active:scale-[0.99] transition-all cursor-pointer tabular-nums"
+              title="Open Local History & Longitudinal Trends"
+            >
+              <History className="w-3.5 h-3.5 text-[#4B5563]" />
+              <span className="hidden md:inline">History &amp; Trends</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-[#F4F4F5] text-[#4B5563] font-mono text-[10px] tabular-nums">
+                {historyCount}
+              </span>
+            </button>
+          )}
 
           {/* Safe Export Action Button */}
           {onOpenSafeExport && (

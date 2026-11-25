@@ -6,6 +6,7 @@ import type {
   ReasoningBlueprint,
   StageTelemetry,
 } from '../types/prism';
+import type { MetricDelta } from '../types/longitudinal';
 import {
   FileText,
   Table,
@@ -19,6 +20,10 @@ import {
   Shield,
   FileCode,
   ChevronDown,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Info,
 } from 'lucide-react';
 import { KeyIndicatorsGrid } from './KeyIndicatorsGrid';
 import { ActionableFocusPlan } from './ActionableFocusPlan';
@@ -49,6 +54,10 @@ interface RelayWorkspaceProps {
   isOfflineMode: boolean;
   onToggleOffline?: () => void;
   onOpenSafeExport?: () => void;
+  metricDeltas?: MetricDelta[];
+  comparedSessionTitle?: string | null;
+  onClearComparison?: () => void;
+  onReplanWithTrend?: () => void;
 }
 
 /**
@@ -116,6 +125,10 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
   telemetry,
   onFollowUpOffline,
   onOpenSafeExport,
+  metricDeltas = [],
+  comparedSessionTitle,
+  onClearComparison,
+  onReplanWithTrend,
 }) => {
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [modalFile, setModalFile] = React.useState<ScenarioFile | null>(null);
@@ -565,6 +578,108 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
       {/* ─── DYNAMIC OUTPUT RENDERING (Only rendered after analysis or when running) ─ */}
       {(hasResults || isRunning) && (
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-7">
+          {/* AI Execution Transparency Notice (when Local AI or Cloud AI was not used) */}
+          {!isRunning && telemetry && (telemetry[0]?.fallbackUsed || telemetry[2]?.fallbackUsed || telemetry[1]?.inferenceSource !== 'IN_CLOUD') && (
+            <div className="rounded-xl bg-[#FFFBEB] border border-[#FDE68A] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-[#92400E]">
+              <div className="flex items-center gap-2">
+                <Info className="w-4 h-4 text-[#B45309] shrink-0" />
+                <span>
+                  {(telemetry[0]?.fallbackUsed || telemetry[2]?.fallbackUsed) && (
+                    <span>
+                      <strong>Local AI (Gemini Nano) was not used</strong> (deterministic on-device fallback ran).{' '}
+                    </span>
+                  )}
+                  {telemetry[1]?.inferenceSource !== 'IN_CLOUD' && (
+                    <span>
+                      <strong>Cloud AI was not used</strong> (Stage 2 served{' '}
+                      {telemetry[1]?.cacheStatus === 'hit' ? 'from local cache' : 'on-device'}).
+                    </span>
+                  )}
+                </span>
+              </div>
+              <span className="font-mono text-[10px] uppercase tracking-wider text-[#B45309]">
+                Transparent Mode
+              </span>
+            </div>
+          )}
+
+          {/* Longitudinal Delta Strip (when comparing against a past VaultSession) */}
+          {comparedSessionTitle && (
+            <div className="bg-white rounded-2xl p-4 border border-[#E6E5E0] shadow-[0_1px_2px_0_rgba(24,24,27,0.03)] space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#ECFDF5] border border-[#A7F3D0] text-[#15803D] text-[10px] font-mono font-semibold">
+                    LONGITUDINAL DIFF
+                  </span>
+                  <span className="text-xs font-medium text-[#18181B]">
+                    Compared against <span className="font-semibold">{comparedSessionTitle}</span>
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {onReplanWithTrend && metricDeltas.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={onReplanWithTrend}
+                      disabled={isRunning}
+                      className="px-2.5 py-1 rounded-lg bg-[#18181B] hover:bg-[#27272A] text-white text-[11px] font-medium transition-colors cursor-pointer disabled:opacity-40"
+                    >
+                      Adapt Plan to Trend
+                    </button>
+                  )}
+                  {onClearComparison && (
+                    <button
+                      type="button"
+                      onClick={onClearComparison}
+                      className="p-1 rounded-lg text-[#71717A] hover:text-[#18181B] hover:bg-[#F4F4F5] transition-colors cursor-pointer"
+                      title="Dismiss comparison"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {metricDeltas.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {metricDeltas.map((d) => {
+                    const isImproved = d.direction === 'IMPROVED';
+                    const isWorsened = d.direction === 'WORSENED';
+                    const badgeClass = isImproved
+                      ? 'bg-[#ECFDF5] border-[#A7F3D0] text-[#15803D]'
+                      : isWorsened
+                      ? 'bg-[#FFF1F2] border-[#FECDD3] text-[#BE123C]'
+                      : 'bg-[#F7F7F5] border-[#E6E5E0] text-[#4B5563]';
+                    const sign = d.percentChange > 0 ? '+' : '';
+                    return (
+                      <div
+                        key={d.metricName}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono tabular-nums ${badgeClass}`}
+                      >
+                        {isImproved ? (
+                          <TrendingUp className="w-3.5 h-3.5" />
+                        ) : isWorsened ? (
+                          <TrendingDown className="w-3.5 h-3.5" />
+                        ) : (
+                          <Minus className="w-3.5 h-3.5" />
+                        )}
+                        <span className="font-sans font-semibold text-[#18181B]">{d.metricName}:</span>
+                        <span>
+                          {d.previousDisplay} → {d.currentDisplay} ({sign}
+                          {d.percentChange}%)
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-[#6B7280]">
+                  No overlapping numeric metric names found between the selected snapshot and the current run.
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Section: Key Indicators Bento Cards */}
           <KeyIndicatorsGrid
             rawContent={combinedRawContent || activeFile?.content}
