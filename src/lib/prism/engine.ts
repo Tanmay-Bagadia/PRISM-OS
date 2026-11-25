@@ -718,42 +718,12 @@ ${rawContent}
 
     try {
       const ai = getFirebaseAI();
-      const cloudModelName = getRemoteConfigCloudModel(
-        import.meta.env.VITE_GEMINI_CLOUD_MODEL || 'gemini-2.5-flash'
+      const primaryModel = getRemoteConfigCloudModel(
+        import.meta.env.VITE_GEMINI_CLOUD_MODEL || 'gemini-3.5-flash-lite'
       );
-      const cloudModel: GenerativeModel = getGenerativeModel(ai, {
-        mode: InferenceMode.PREFER_IN_CLOUD,
-        inCloudParams: {
-          model: cloudModelName,
-          generationConfig: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: SchemaType.OBJECT,
-              properties: {
-                schema: { type: SchemaType.STRING },
-                goal: { type: SchemaType.STRING },
-                steps: {
-                  type: SchemaType.ARRAY,
-                  items: {
-                    type: SchemaType.OBJECT,
-                    properties: {
-                      id: { type: SchemaType.STRING },
-                      action: { type: SchemaType.STRING },
-                      inputs: {
-                        type: SchemaType.ARRAY,
-                        items: { type: SchemaType.STRING },
-                      },
-                      output: { type: SchemaType.STRING },
-                    },
-                    required: ['id', 'action', 'inputs', 'output'],
-                  },
-                },
-              },
-              required: ['schema', 'goal', 'steps'],
-            },
-          },
-        },
-      });
+      const candidateModels = Array.from(
+        new Set([primaryModel, 'gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.5-flash'])
+      );
 
       const diffSection = options.diffTopology && options.diffTopology.deltas.length > 0
         ? `\nLongitudinal Trend Diff (prism-diff-v1, zero PII):\n${JSON.stringify(options.diffTopology)}\nAdapt your 3-step blueprint to address these observed metric trends.`
@@ -767,22 +737,73 @@ You MUST explicitly set "schema": "prism-blueprint-v1" in the output JSON.
 Topology:
 ${topoString}${diffSection}
 `;
-      const result = await cloudModel.generateContent(cloudPrompt);
-      stage2InferenceSource = (result.response.inferenceSource as InferenceSource) || 'IN_CLOUD';
 
-      const jsonText = result.response.text();
-      const parsed = parseCleanJson<Partial<ReasoningBlueprint>>(jsonText);
+      let lastCloudErr: unknown = null;
+      let cloudParsed: ReasoningBlueprint | null = null;
 
-      if (parsed && Array.isArray(parsed.steps)) {
-        parsed.schema = 'prism-blueprint-v1';
-        if (!parsed.goal) parsed.goal = goal;
+      for (const modelName of candidateModels) {
+        try {
+          const cloudModel: GenerativeModel = getGenerativeModel(ai, {
+            mode: InferenceMode.ONLY_IN_CLOUD,
+            inCloudParams: {
+              model: modelName,
+              generationConfig: {
+                responseMimeType: 'application/json',
+                responseSchema: {
+                  type: SchemaType.OBJECT,
+                  properties: {
+                    schema: { type: SchemaType.STRING },
+                    goal: { type: SchemaType.STRING },
+                    steps: {
+                      type: SchemaType.ARRAY,
+                      items: {
+                        type: SchemaType.OBJECT,
+                        properties: {
+                          id: { type: SchemaType.STRING },
+                          action: { type: SchemaType.STRING },
+                          inputs: {
+                            type: SchemaType.ARRAY,
+                            items: { type: SchemaType.STRING },
+                          },
+                          output: { type: SchemaType.STRING },
+                        },
+                        required: ['id', 'action', 'inputs', 'output'],
+                      },
+                    },
+                  },
+                  required: ['schema', 'goal', 'steps'],
+                },
+              },
+            },
+          });
+
+          const result = await cloudModel.generateContent(cloudPrompt);
+          const rawSource = String(result.response.inferenceSource || 'IN_CLOUD').toUpperCase();
+          stage2InferenceSource = rawSource === 'ON_DEVICE' ? 'ON_DEVICE' : 'IN_CLOUD';
+
+          const jsonText = result.response.text();
+          const parsed = parseCleanJson<Partial<ReasoningBlueprint>>(jsonText);
+
+          if (parsed && Array.isArray(parsed.steps)) {
+            parsed.schema = 'prism-blueprint-v1';
+            if (!parsed.goal) parsed.goal = goal;
+          }
+
+          if (parsed && parsed.schema === 'prism-blueprint-v1' && Array.isArray(parsed.steps)) {
+            cloudParsed = parsed as ReasoningBlueprint;
+            break;
+          }
+          throw new Error(`Cloud model ${modelName} returned unexpected blueprint schema`);
+        } catch (modelErr) {
+          lastCloudErr = modelErr;
+          console.warn(`[PRISM Stage 2] Cloud model "${modelName}" failed, trying next:`, modelErr);
+        }
       }
 
-      if (parsed && parsed.schema === 'prism-blueprint-v1' && Array.isArray(parsed.steps)) {
-        blueprint = parsed as ReasoningBlueprint;
-      } else {
-        throw new Error('Cloud returned unexpected blueprint schema');
+      if (!cloudParsed) {
+        throw lastCloudErr || new Error('All cloud models failed');
       }
+      blueprint = cloudParsed;
 
       // Persist to Firestore cache non-blocking for future offline fallback
       void setDoc(blueprintDocRef, {
@@ -814,7 +835,7 @@ ${topoString}${diffSection}
   } else if (posture === 'vault') {
     // Vault Mode: Pure local execution, zero Firestore / network calls
     stage2CacheStatus = 'none';
-    stage2Fallback = true;
+    stage2Fallback = false;
     stage2InferenceSource = 'ON_DEVICE';
     stage2BytesSent = 0;
     let nanoBp: ReasoningBlueprint | null = null;

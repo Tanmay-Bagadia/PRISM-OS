@@ -71,6 +71,8 @@ export function getFirebaseApp(): FirebaseApp {
 export function getFirebaseAI(): AI {
   if (!aiInstance) {
     const app = getFirebaseApp();
+    // Register App Check before getAI() so AIService resolves appCheckProvider.getImmediate()
+    setupAppCheck();
     aiInstance = getAI(app, {
       backend: new GoogleAIBackend(),
     });
@@ -121,7 +123,7 @@ export function getFirebaseRemoteConfig(): RemoteConfig {
       maxRttForCloud: 2000,
       vaultForceLocal: true,
       frontierForceCloud: true,
-      cloudModel: 'gemini-2.5-flash',
+      cloudModel: 'gemini-3.5-flash-lite',
     };
     remoteConfigInstance.settings.minimumFetchIntervalMillis = 3600000; // 1 hour
   }
@@ -168,7 +170,7 @@ export function getRemoteConfigCloudModel(fallbackModel?: string): string {
   } catch {
     // Non-blocking fallback
   }
-  return import.meta.env.VITE_GEMINI_CLOUD_MODEL || fallbackModel || 'gemini-2.5-flash';
+  return import.meta.env.VITE_GEMINI_CLOUD_MODEL || fallbackModel || 'gemini-3.5-flash-lite';
 }
 
 /**
@@ -213,13 +215,13 @@ export async function initializeFirebase(): Promise<{
   remoteConfig: RemoteConfig;
 }> {
   const app = getFirebaseApp();
+  // Setup App Check before initializing AI/Auth/Firestore services
+  setupAppCheck();
+
   const ai = getFirebaseAI();
   const auth = getFirebaseAuth();
   const db = getFirebaseFirestore();
   const remoteConfig = getFirebaseRemoteConfig();
-
-  // Setup App Check
-  setupAppCheck();
 
   // Frictionless anonymous sign-in for hackathon judges & tests
   try {

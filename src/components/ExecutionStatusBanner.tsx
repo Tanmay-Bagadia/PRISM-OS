@@ -37,7 +37,7 @@ export function deriveExecutionMode(
   if (stage2.inferenceSource === 'IN_CLOUD' && !stage2.fallbackUsed) {
     return {
       kind: 'cloud',
-      badgeLabel: `Cloud Gemini 2.5 • Anonymized Topology (${stage2.bytesSentToCloud} B sent)`,
+      badgeLabel: `Cloud Gemini • Anonymized Topology (${stage2.bytesSentToCloud} B sent)`,
       toastMessage: 'Analyzed via Cloud Gemini using anonymized topology (0 bytes raw PII sent).',
       pillClasses: 'bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8]',
       dotColor: 'bg-[#1D4ED8]',
