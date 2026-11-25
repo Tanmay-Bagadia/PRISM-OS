@@ -20,6 +20,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { TelemetryBar } from './components/TelemetryBar';
 import { RelayWorkspace } from './components/RelayWorkspace';
 import { PrivacyReceiptDrawer } from './components/PrivacyReceiptDrawer';
+import { SafeExportModal } from './components/SafeExportModal';
 import {
   MobileBlueprintDrawer,
   type CachedBlueprintRecord,
@@ -66,6 +67,7 @@ export const App: React.FC = () => {
 
   // ─── Privacy Receipt & Blueprint Drawers State ─────────────────────────
   const [isPrivacyReceiptOpen, setIsPrivacyReceiptOpen] = React.useState(false);
+  const [isSafeExportOpen, setIsSafeExportOpen] = React.useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
   const [cachedBlueprints, setCachedBlueprints] = React.useState<CachedBlueprintRecord[]>([]);
   const [toastMessage, setToastMessage] = React.useState<string | null>(null);
@@ -340,6 +342,7 @@ export const App: React.FC = () => {
         blueprintCount={cachedBlueprints.length}
         isFirebaseReady={isFirebaseReady}
         onOpenPrivacyReceipt={() => setIsPrivacyReceiptOpen(true)}
+        onOpenSafeExport={() => setIsSafeExportOpen(true)}
         onToggleOffline={() => {
           const newOnline = !device.online;
           setDevice((prev) => ({ ...prev, online: newOnline }));
@@ -370,6 +373,7 @@ export const App: React.FC = () => {
         telemetry={telemetry}
         onFollowUpOffline={handleFollowUpOffline}
         isOfflineMode={!device.online}
+        onOpenSafeExport={() => setIsSafeExportOpen(true)}
         onToggleOffline={() => {
           const newOnline = !device.online;
           setDevice((prev) => ({ ...prev, online: newOnline }));
@@ -385,6 +389,18 @@ export const App: React.FC = () => {
         blueprint={blueprint}
         telemetry={telemetry}
         activeFileNames={files.map((f) => f.name)}
+      />
+
+      {/* Safe-to-Share Redacted Export & Action Letter Modal */}
+      <SafeExportModal
+        isOpen={isSafeExportOpen}
+        onClose={() => setIsSafeExportOpen(false)}
+        rawContent={files
+          .map((f) => (files.length > 1 ? `=== FILE: ${f.name} ===\n${f.content.trim()}` : f.content.trim()))
+          .join('\n\n')}
+        hydratedReport={hydratedReport}
+        topology={topology}
+        documentTitle={files[0]?.name || 'prism-document'}
       />
 
       {/* Mobile / Companion Blueprint Drawer */}
