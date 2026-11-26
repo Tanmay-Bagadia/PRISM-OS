@@ -42,10 +42,10 @@ function getPaddedCutoutRect(el: Element): CutoutRect | null {
 
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const top = Math.max(0, raw.top - CUTOUT_PADDING);
-  const left = Math.max(0, raw.left - CUTOUT_PADDING);
-  const right = Math.min(vw, raw.right + CUTOUT_PADDING);
-  const bottom = Math.min(vh, raw.bottom + CUTOUT_PADDING);
+  const top = Math.round(Math.max(0, raw.top - CUTOUT_PADDING));
+  const left = Math.round(Math.max(0, raw.left - CUTOUT_PADDING));
+  const right = Math.round(Math.min(vw, raw.right + CUTOUT_PADDING));
+  const bottom = Math.round(Math.min(vh, raw.bottom + CUTOUT_PADDING));
   const width = right - left;
   const height = bottom - top;
 
@@ -307,55 +307,56 @@ export const InteractiveTutorialOverlay: React.FC<InteractiveTutorialOverlayProp
     >
       {targetRect ? (
         <>
-          {/* 4-Panel Blurred Backdrop keeping the target cutout 100% unblurred & clickable */}
+          {/* Seamless single-layer blurred backdrop with exact rounded-xl SVG cutout (zero panel seams or square corners) */}
+          {(() => {
+            const r = Math.min(14, Math.floor(targetRect.width / 2), Math.floor(targetRect.height / 2));
+            const maskSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${viewport.width}" height="${viewport.height}" viewBox="0 0 ${viewport.width} ${viewport.height}"><rect width="100%" height="100%" fill="white"/><rect x="${targetRect.left}" y="${targetRect.top}" width="${targetRect.width}" height="${targetRect.height}" rx="${r}" ry="${r}" fill="black"/></svg>`;
+            const maskUrl = `url("data:image/svg+xml,${encodeURIComponent(maskSvg)}")`;
+            return (
+              <div
+                className="fixed inset-0 backdrop-blur-md bg-slate-950/45 transition-opacity duration-300 pointer-events-none"
+                style={{
+                  maskImage: maskUrl,
+                  WebkitMaskImage: maskUrl,
+                  maskRepeat: 'no-repeat',
+                  WebkitMaskRepeat: 'no-repeat',
+                  maskSize: '100% 100%',
+                  WebkitMaskSize: '100% 100%',
+                }}
+                aria-hidden="true"
+              />
+            );
+          })()}
+
+          {/* 4 transparent click-catcher strips around the cutout so outside clicks close, inside clicks pass through */}
           <div
-            className="fixed backdrop-blur-md bg-slate-950/45 transition-all duration-300 pointer-events-auto"
-            style={{
-              top: 0,
-              left: 0,
-              right: 0,
-              height: targetRect.top,
-            }}
+            className="fixed pointer-events-auto"
+            style={{ top: 0, left: 0, right: 0, height: targetRect.top }}
             onClick={onClose}
             aria-hidden="true"
           />
           <div
-            className="fixed backdrop-blur-md bg-slate-950/45 transition-all duration-300 pointer-events-auto"
-            style={{
-              top: targetRect.top + targetRect.height,
-              left: 0,
-              right: 0,
-              bottom: 0,
-            }}
+            className="fixed pointer-events-auto"
+            style={{ top: targetRect.top + targetRect.height, left: 0, right: 0, bottom: 0 }}
             onClick={onClose}
             aria-hidden="true"
           />
           <div
-            className="fixed backdrop-blur-md bg-slate-950/45 transition-all duration-300 pointer-events-auto"
-            style={{
-              top: targetRect.top,
-              left: 0,
-              width: targetRect.left,
-              height: targetRect.height,
-            }}
+            className="fixed pointer-events-auto"
+            style={{ top: targetRect.top, left: 0, width: targetRect.left, height: targetRect.height }}
             onClick={onClose}
             aria-hidden="true"
           />
           <div
-            className="fixed backdrop-blur-md bg-slate-950/45 transition-all duration-300 pointer-events-auto"
-            style={{
-              top: targetRect.top,
-              left: targetRect.left + targetRect.width,
-              right: 0,
-              height: targetRect.height,
-            }}
+            className="fixed pointer-events-auto"
+            style={{ top: targetRect.top, left: targetRect.left + targetRect.width, right: 0, height: targetRect.height }}
             onClick={onClose}
             aria-hidden="true"
           />
 
-          {/* Crisp glowing cutout ring (non-blocking) */}
+          {/* Crisp glowing cutout ring aligned to the rounded SVG mask (non-blocking) */}
           <div
-            className="fixed ring-2 ring-emerald-400 shadow-[0_0_0_4px_rgba(16,185,129,0.2)] rounded-xl transition-all duration-300 pointer-events-none"
+            className="fixed rounded-[14px] ring-2 ring-emerald-400 shadow-[0_0_0_4px_rgba(16,185,129,0.2)] transition-all duration-300 pointer-events-none"
             style={{
               top: targetRect.top,
               left: targetRect.left,
