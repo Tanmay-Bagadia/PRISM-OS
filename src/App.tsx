@@ -27,12 +27,18 @@ import {
   MobileBlueprintDrawer,
   type CachedBlueprintRecord,
 } from './components/MobileBlueprintDrawer';
-import type { VaultSession, MetricDelta, DiffTopology } from './types/longitudinal';
+import type { VaultSession, VaultFolder, MetricDelta, DiffTopology } from './types/longitudinal';
+import type { BenchmarkTopology, BenchmarkFinding } from './types/benchmark';
 import {
   saveVaultSession,
   listVaultSessions,
   deleteVaultSession,
   clearVaultSessions,
+  createVaultFolder,
+  listVaultFolders,
+  renameVaultFolder,
+  deleteVaultFolder,
+  moveSessionToFolder,
 } from './lib/storage/localHistoryVault';
 import {
   extractMetricsFromReport,
@@ -86,9 +92,17 @@ export const App: React.FC = () => {
   const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
   const [cachedBlueprints, setCachedBlueprints] = React.useState<CachedBlueprintRecord[]>([]);
   const [vaultSessions, setVaultSessions] = React.useState<VaultSession[]>([]);
+  const [vaultFolders, setVaultFolders] = React.useState<VaultFolder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = React.useState<string | null>(null);
+  const [lastSavedSessionId, setLastSavedSessionId] = React.useState<string | null>(null);
   const [metricDeltas, setMetricDeltas] = React.useState<MetricDelta[]>([]);
   const [comparedSession, setComparedSession] = React.useState<VaultSession | null>(null);
+  const [comparisonLabel, setComparisonLabel] = React.useState<string | null>(null);
   const [activeDiffTopology, setActiveDiffTopology] = React.useState<DiffTopology | null>(null);
+  const [benchmarkSourceTitle, setBenchmarkSourceTitle] = React.useState<string>('');
+  const [benchmarkReferenceText, setBenchmarkReferenceText] = React.useState<string>('');
+  const [benchmarkTopology, setBenchmarkTopology] = React.useState<BenchmarkTopology | null>(null);
+  const [benchmarkFindings, setBenchmarkFindings] = React.useState<BenchmarkFinding[]>([]);
   const [toastState, setToastState] = React.useState<{
     message: string;
     dotColor?: string;
@@ -122,9 +136,12 @@ export const App: React.FC = () => {
         console.warn('[PRISM-OS] Firebase initialization deferred:', err);
       });
 
-    // 1b. Load locally persisted IndexedDB longitudinal sessions
+    // 1b. Load locally persisted IndexedDB longitudinal sessions & folders
     listVaultSessions()
       .then((sessions) => setVaultSessions(sessions))
+      .catch(() => {});
+    listVaultFolders()
+      .then((folders) => setVaultFolders(folders))
       .catch(() => {});
 
     // 2. Initial check & subscribe to Chrome Gemini Nano 4 availability & progress
@@ -271,6 +288,10 @@ export const App: React.FC = () => {
     setMetricDeltas([]);
     setComparedSession(null);
     setActiveDiffTopology(null);
+    setBenchmarkSourceTitle('');
+    setBenchmarkReferenceText('');
+    setBenchmarkTopology(null);
+    setBenchmarkFindings([]);
     setIsPrivacyReceiptOpen(false);
     void clearVaultSessions().then(() => setVaultSessions([]));
     showToast('Workspace & local history reset. New private session started.');
@@ -316,6 +337,8 @@ export const App: React.FC = () => {
         device: activeDevice,
         thresholds,
         diffTopology: overrideDiffTopology !== undefined ? overrideDiffTopology : activeDiffTopology,
+        referenceText: benchmarkReferenceText,
+        referenceSourceTitle: benchmarkSourceTitle,
         onStageProgress: (stageIndex) => setActiveStageIndex(stageIndex),
       });
 
@@ -324,6 +347,8 @@ export const App: React.FC = () => {
       setBlueprint(result.blueprint);
       setHydratedReport(cleanReport);
       setTelemetry(result.telemetry);
+      setBenchmarkTopology(result.benchmarkTopology ?? null);
+      setBenchmarkFindings(result.benchmarkFindings ?? []);
 
       // Auto-save completed run to local IndexedDB Vault
       const extractedMetrics = extractMetricsFromReport(cleanReport, combinedRawContent);
@@ -336,10 +361,12 @@ export const App: React.FC = () => {
         timestamp: new Date().toISOString(),
         title: validFiles[0]?.name || activePrompt.slice(0, 48),
         domainTag: inferredDomain,
+        folderId: selectedFolderId,
         metrics: extractedMetrics,
         rawSnippet: combinedRawContent.slice(0, 180),
         hydratedReport: cleanReport,
       };
+      setLastSavedSessionId(newSession.id);
       void saveVaultSession(newSession)
         .then(() => listVaultSessions())
         .then((updated) => setVaultSessions(updated))
@@ -392,7 +419,53 @@ export const App: React.FC = () => {
     await executePipeline(offlineDevice, customPrompt);
   };
 
-  // ─── Longitudinal History & Comparison Handlers ───────────────────────
+  // ─── Longitudinal History, Folders & Comparison Handlers ──────────────
+  const handleCreateFolder = async (name: string, color?: string) => {
+    const folder = await createVaultFolder(name, color);
+    const updated = await listVaultFolders();
+    setVaultFolders(updated);
+    showToast(`Created folder "${folder.name}"`);
+  };
+
+  const handleRenameFolder = async (id: string, name: string) => {
+    await renameVaultFolder(id, name);
+    const updated = await listVaultFolders();
+    setVaultFolders(updated);
+  };
+
+  const handleDeleteFolder = async (id: string) => {
+    await deleteVaultFolder(id);
+    const [updatedFolders, updatedSessions] = await Promise.all([
+      listVaultFolders(),
+      listVaultSessions(),
+    ]);
+    setVaultFolders(updatedFolders);
+    setVaultSessions(updatedSessions);
+    if (selectedFolderId === id) {
+      setSelectedFolderId(null);
+    }
+    showToast('Deleted folder (saved runs moved to Unfiled)');
+  };
+
+  const handleMoveSessionToFolder = async (sessionId: string, folderId: string | null) => {
+    await moveSessionToFolder(sessionId, folderId);
+    const updated = await listVaultSessions();
+    setVaultSessions(updated);
+    if (lastSavedSessionId === sessionId) {
+      setSelectedFolderId(folderId);
+    }
+  };
+
+  const handleAssignCurrentSessionFolder = (folderId: string | null) => {
+    setSelectedFolderId(folderId);
+    if (lastSavedSessionId) {
+      void handleMoveSessionToFolder(lastSavedSessionId, folderId).then(() => {
+        const folderName = vaultFolders.find((f) => f.id === folderId)?.name || 'Unfiled';
+        showToast(`Saved run to "${folderName}"`);
+      });
+    }
+  };
+
   const handleDeleteVaultSession = (id: string) => {
     void deleteVaultSession(id)
       .then(() => listVaultSessions())
@@ -400,8 +473,12 @@ export const App: React.FC = () => {
       .catch(() => {});
     if (comparedSession?.id === id) {
       setComparedSession(null);
+      setComparisonLabel(null);
       setMetricDeltas([]);
       setActiveDiffTopology(null);
+    }
+    if (lastSavedSessionId === id) {
+      setLastSavedSessionId(null);
     }
   };
 
@@ -410,9 +487,32 @@ export const App: React.FC = () => {
       .then(() => setVaultSessions([]))
       .catch(() => {});
     setComparedSession(null);
+    setComparisonLabel(null);
     setMetricDeltas([]);
     setActiveDiffTopology(null);
+    setLastSavedSessionId(null);
     showToast('Cleared all local IndexedDB history');
+  };
+
+  const handleCompareRuns = async (baselineSession: VaultSession, targetSession: VaultSession) => {
+    const deltas = computeMetricDeltas(baselineSession.metrics, targetSession.metrics);
+    const diffTopo = buildAnonymizedDiffTopology(
+      deltas,
+      `Comparing ${baselineSession.timestamp.slice(0, 10)} vs ${targetSession.timestamp.slice(0, 10)}`
+    );
+
+    setComparedSession(targetSession);
+    setComparisonLabel(`${baselineSession.title} → ${targetSession.title}`);
+    setMetricDeltas(deltas);
+    setActiveDiffTopology(diffTopo);
+    setIsHistoryOpen(false);
+
+    if (deltas.length > 0 && prompt.trim()) {
+      showToast(`Computed ${deltas.length} metric delta(s) (${baselineSession.title} → ${targetSession.title}). Adapting blueprint...`);
+      await executePipeline(undefined, undefined, diffTopo);
+    } else {
+      showToast(`Compared "${baselineSession.title}" → "${targetSession.title}" (${deltas.length} delta${deltas.length === 1 ? '' : 's'})`);
+    }
   };
 
   const handleCompareWithCurrent = async (pastSession: VaultSession) => {
@@ -429,6 +529,7 @@ export const App: React.FC = () => {
     );
 
     setComparedSession(pastSession);
+    setComparisonLabel(pastSession.title);
     setMetricDeltas(deltas);
     setActiveDiffTopology(diffTopo);
     setIsHistoryOpen(false);
@@ -501,13 +602,22 @@ export const App: React.FC = () => {
         isOfflineMode={!device.online}
         onOpenSafeExport={() => setIsSafeExportOpen(true)}
         metricDeltas={metricDeltas}
-        comparedSessionTitle={comparedSession?.title || null}
+        comparedSessionTitle={comparisonLabel || comparedSession?.title || null}
         onClearComparison={() => {
           setComparedSession(null);
+          setComparisonLabel(null);
           setMetricDeltas([]);
           setActiveDiffTopology(null);
         }}
         onReplanWithTrend={() => executePipeline(undefined, undefined, activeDiffTopology)}
+        folders={vaultFolders}
+        activeSessionFolderId={selectedFolderId}
+        onAssignSessionFolder={handleAssignCurrentSessionFolder}
+        benchmarkSourceTitle={benchmarkSourceTitle}
+        onChangeBenchmarkSourceTitle={setBenchmarkSourceTitle}
+        benchmarkReferenceText={benchmarkReferenceText}
+        onChangeBenchmarkReferenceText={setBenchmarkReferenceText}
+        benchmarkFindings={benchmarkFindings}
         onToggleOffline={() => {
           const newOnline = !device.online;
           setDevice((prev) => ({ ...prev, online: newOnline }));
@@ -523,6 +633,7 @@ export const App: React.FC = () => {
         blueprint={blueprint}
         telemetry={telemetry}
         activeFileNames={files.map((f) => f.name)}
+        benchmarkTopology={benchmarkTopology}
       />
 
       {/* Safe-to-Share Redacted Export & Action Letter Modal */}
@@ -542,8 +653,14 @@ export const App: React.FC = () => {
         isOpen={isHistoryOpen}
         onClose={() => setIsHistoryOpen(false)}
         sessions={vaultSessions}
+        folders={vaultFolders}
         onDeleteSession={handleDeleteVaultSession}
         onClearAll={handleClearAllVault}
+        onCreateFolder={handleCreateFolder}
+        onRenameFolder={handleRenameFolder}
+        onDeleteFolder={handleDeleteFolder}
+        onMoveSessionToFolder={handleMoveSessionToFolder}
+        onCompareRuns={handleCompareRuns}
         onCompareWithCurrent={handleCompareWithCurrent}
         canCompare={Boolean(hydratedReport || files.some((f) => f.content.trim().length > 0))}
         activeComparedSessionId={comparedSession?.id || null}

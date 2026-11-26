@@ -5,11 +5,19 @@ export interface ExtractedMetric {
   rawDisplay: string;
 }
 
+export interface VaultFolder {
+  id: string;
+  name: string;
+  color?: string;
+  createdAt: string;
+}
+
 export interface VaultSession {
   id: string;
   timestamp: string;
   title: string;
   domainTag: string;
+  folderId?: string | null;
   metrics: ExtractedMetric[];
   rawSnippet: string;
   hydratedReport: string;

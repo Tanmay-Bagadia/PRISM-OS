@@ -6,7 +6,12 @@ import type {
   ReasoningBlueprint,
   StageTelemetry,
 } from '../types/prism';
-import type { MetricDelta } from '../types/longitudinal';
+import type { MetricDelta, VaultFolder } from '../types/longitudinal';
+import type { BenchmarkFinding } from '../types/benchmark';
+import {
+  BenchmarkReferenceInput,
+  GroundedBenchmarksGrid,
+} from './BenchmarkComparisonPanel';
 import {
   FileText,
   Table,
@@ -24,6 +29,7 @@ import {
   TrendingDown,
   Minus,
   Info,
+  Folder,
 } from 'lucide-react';
 import { KeyIndicatorsGrid } from './KeyIndicatorsGrid';
 import { ActionableFocusPlan } from './ActionableFocusPlan';
@@ -58,6 +64,14 @@ interface RelayWorkspaceProps {
   comparedSessionTitle?: string | null;
   onClearComparison?: () => void;
   onReplanWithTrend?: () => void;
+  folders?: VaultFolder[];
+  activeSessionFolderId?: string | null;
+  onAssignSessionFolder?: (folderId: string | null) => void;
+  benchmarkSourceTitle?: string;
+  onChangeBenchmarkSourceTitle?: (v: string) => void;
+  benchmarkReferenceText?: string;
+  onChangeBenchmarkReferenceText?: (v: string) => void;
+  benchmarkFindings?: BenchmarkFinding[];
 }
 
 /**
@@ -129,6 +143,14 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
   comparedSessionTitle,
   onClearComparison,
   onReplanWithTrend,
+  folders = [],
+  activeSessionFolderId = null,
+  onAssignSessionFolder,
+  benchmarkSourceTitle = '',
+  onChangeBenchmarkSourceTitle,
+  benchmarkReferenceText = '',
+  onChangeBenchmarkReferenceText,
+  benchmarkFindings = [],
 }) => {
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [modalFile, setModalFile] = React.useState<ScenarioFile | null>(null);
@@ -518,11 +540,22 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
               ))}
             </div>
           )}
+          {/* Optional Benchmark & Reference Source Input */}
+          {onChangeBenchmarkSourceTitle && onChangeBenchmarkReferenceText && (
+            <div className="mt-3">
+              <BenchmarkReferenceInput
+                sourceTitle={benchmarkSourceTitle}
+                onChangeSourceTitle={onChangeBenchmarkSourceTitle}
+                referenceText={benchmarkReferenceText}
+                onChangeReferenceText={onChangeBenchmarkReferenceText}
+              />
+            </div>
+          )}
         </div>
       </section>
 
       {/* ─── INITIAL CALM EMPTY STATE (When no analysis has been executed yet) ──── */}
-      {!hasResults && !isRunning && (
+      {!hasResults && !isRunning && !comparedSessionTitle && (
         <div className="bg-white rounded-2xl p-8 sm:p-10 border border-[#E6E5E0] shadow-[0_1px_2px_0_rgba(24,24,27,0.03)] text-center animate-in fade-in duration-300">
           <div className="w-12 h-12 rounded-2xl bg-[#F7F7F5] border border-[#E6E5E0] flex items-center justify-center text-[#15803D] mx-auto mb-4">
             <UploadCloud className="w-6 h-6" />
@@ -575,9 +608,34 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
         </div>
       )}
 
-      {/* ─── DYNAMIC OUTPUT RENDERING (Only rendered after analysis or when running) ─ */}
-      {(hasResults || isRunning) && (
+      {/* ─── DYNAMIC OUTPUT RENDERING (Only rendered after analysis, comparison, or when running) ─ */}
+      {(hasResults || isRunning || Boolean(comparedSessionTitle)) && (
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-7">
+          {/* Save to Folder Pill (Shown on completed runs) */}
+          {!isRunning && hasResults && onAssignSessionFolder && (
+            <div className="flex items-center justify-end gap-2">
+              <label
+                htmlFor="workspace-save-folder"
+                className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#6B7280]"
+              >
+                <Folder className="w-3.5 h-3.5 text-[#15803D]" />
+                <span>Save to Folder:</span>
+              </label>
+              <select
+                id="workspace-save-folder"
+                value={activeSessionFolderId || ''}
+                onChange={(e) => onAssignSessionFolder(e.target.value || null)}
+                className="px-2.5 py-1 rounded-lg bg-white border border-[#E6E5E0] text-xs font-medium text-[#18181B] focus:outline-none focus:border-[#15803D] cursor-pointer"
+              >
+                <option value="">Unfiled</option>
+                {folders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {/* AI Execution Transparency Notice (when Local AI or Cloud AI was not used) */}
           {!isRunning && telemetry && (telemetry[0]?.fallbackUsed || telemetry[2]?.fallbackUsed || telemetry[1]?.inferenceSource !== 'IN_CLOUD') && (
             <div className="rounded-xl bg-[#FFFBEB] border border-[#FDE68A] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-[#92400E]">
@@ -688,6 +746,12 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
             stage3Telemetry={telemetry?.[2]}
             telemetry={telemetry}
             isRunning={isRunning}
+          />
+
+          {/* Section: Grounded Blind Cohort Benchmarks */}
+          <GroundedBenchmarksGrid
+            findings={benchmarkFindings}
+            isRunning={isRunning && (benchmarkFindings.length > 0 || Boolean(benchmarkReferenceText.trim()))}
           />
 
           {/* Section: Actionable Focus Plan (Things 3 Checklist) */}

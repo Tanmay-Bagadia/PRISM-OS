@@ -24,6 +24,11 @@ import type {
   CacheStatus,
 } from '../../types/prism';
 import type { DiffTopology } from '../../types/longitudinal';
+import type {
+  BenchmarkTopology,
+  BenchmarkFinding,
+  CloudBenchmarkEvaluation,
+} from '../../types/benchmark';
 import {
   getFirebaseAI,
   getFirebaseFirestore,
@@ -31,6 +36,12 @@ import {
 } from '../firebase/client';
 import { scrubPII } from './scrubber';
 import { computeRoute } from './router';
+import {
+  extractSubjectRatios,
+  parseUserReferenceData,
+  buildAnonymizedBenchmarkTopology,
+} from './benchmarkExtractor';
+import { hydrateBenchmarkFindings } from './benchmarkHydrator';
 
 export interface PrismRunOptions {
   rawContent: string;
@@ -39,7 +50,14 @@ export interface PrismRunOptions {
   device: DeviceContext;
   thresholds: RemoteThresholds;
   diffTopology?: DiffTopology | null;
+  referenceText?: string;
+  referenceSourceTitle?: string;
   onStageProgress?: (stageIndex: number, stageName: string) => void;
+}
+
+export interface PrismPipelineExtendedOutput extends PrismPipelineOutput {
+  benchmarkTopology?: BenchmarkTopology | null;
+  benchmarkFindings?: BenchmarkFinding[];
 }
 
 /**
@@ -611,7 +629,7 @@ ${dualGroundingRows || '| Primary Document | Full Local File Grounded | [REDACTE
 /**
  * Main 3-Stage PRISM Pipeline Entry Point
  */
-export async function runPrismPipeline(options: PrismRunOptions): Promise<PrismPipelineOutput> {
+export async function runPrismPipeline(options: PrismRunOptions): Promise<PrismPipelineExtendedOutput> {
   const { rawContent, prompt, posture, device, thresholds } = options;
   const goal = prompt;
   const decision = computeRoute(posture, device, thresholds);
@@ -710,11 +728,30 @@ ${rawContent}
   const db = getFirebaseFirestore();
   const blueprintDocRef = doc(collection(db, 'blueprints'), topologyHash);
 
+  // Build anonymized BenchmarkTopology (0 bytes raw PII) when ratios or reference data exist
+  const initialSubjectRatios = extractSubjectRatios(rawContent, '');
+  const parsedReferenceMetrics = options.referenceText?.trim()
+    ? parseUserReferenceData(options.referenceText, options.referenceSourceTitle || '')
+    : [];
+  const benchmarkTopology: BenchmarkTopology | null =
+    initialSubjectRatios.length > 0 || parsedReferenceMetrics.length > 0
+      ? buildAnonymizedBenchmarkTopology(
+          initialSubjectRatios,
+          parsedReferenceMetrics,
+          options.referenceSourceTitle?.trim() || null
+        )
+      : null;
+
+  let cloudBenchmarkEvaluations: CloudBenchmarkEvaluation[] = [];
+
   if (decision.useCloud) {
     // Cloud requested (Smart Hybrid / Deep Analysis while online):
     // Always invoke Cloud Gemini first rather than short-circuiting on Firestore cache
     stage2CacheStatus = 'miss';
-    stage2BytesSent = topologyByteLength;
+    const benchmarkByteLength = benchmarkTopology
+      ? new TextEncoder().encode(JSON.stringify(benchmarkTopology)).length
+      : 0;
+    stage2BytesSent = topologyByteLength + benchmarkByteLength;
 
     try {
       const ai = getFirebaseAI();
@@ -729,17 +766,21 @@ ${rawContent}
         ? `\nLongitudinal Trend Diff (prism-diff-v1, zero PII):\n${JSON.stringify(options.diffTopology)}\nAdapt your 3-step blueprint to address these observed metric trends.`
         : '';
 
+      const benchmarkSection = benchmarkTopology
+        ? `\nAnonymized Benchmark Topology (prism-benchmark-v1, zero PII):\n${JSON.stringify(benchmarkTopology)}\nSTRICT BENCHMARK GROUNDING INSTRUCTION:\nEvaluate subjectRatios strictly against the provided referenceMetrics. Preserve and return the exact sourceCitation for every item. Never fabricate statistics or ungrounded averages; if no reference metric exists for a ratio, omit it rather than guessing.`
+        : '';
+
       const cloudPrompt = `
 You are the PRISM Cloud Blueprint Reasoner.
 You are given an abstract entity/relationship topology with zero PII or raw numbers.
 Formulate a structured Reasoning Blueprint to achieve the goal: "${prompt}".
 You MUST explicitly set "schema": "prism-blueprint-v1" in the output JSON.
 Topology:
-${topoString}${diffSection}
+${topoString}${diffSection}${benchmarkSection}
 `;
 
       let lastCloudErr: unknown = null;
-      let cloudParsed: ReasoningBlueprint | null = null;
+      let cloudParsed: (ReasoningBlueprint & { benchmarkEvaluations?: CloudBenchmarkEvaluation[] }) | null = null;
 
       for (const modelName of candidateModels) {
         try {
@@ -770,6 +811,20 @@ ${topoString}${diffSection}
                         required: ['id', 'action', 'inputs', 'output'],
                       },
                     },
+                    benchmarkEvaluations: {
+                      type: SchemaType.ARRAY,
+                      items: {
+                        type: SchemaType.OBJECT,
+                        properties: {
+                          ratioKey: { type: SchemaType.STRING },
+                          standing: { type: SchemaType.STRING },
+                          targetGapRatio: { type: SchemaType.NUMBER },
+                          benchmarkValueDisplay: { type: SchemaType.STRING },
+                          sourceCitation: { type: SchemaType.STRING },
+                        },
+                        required: ['ratioKey', 'standing', 'targetGapRatio', 'benchmarkValueDisplay', 'sourceCitation'],
+                      },
+                    },
                   },
                   required: ['schema', 'goal', 'steps'],
                 },
@@ -782,7 +837,7 @@ ${topoString}${diffSection}
           stage2InferenceSource = rawSource === 'ON_DEVICE' ? 'ON_DEVICE' : 'IN_CLOUD';
 
           const jsonText = result.response.text();
-          const parsed = parseCleanJson<Partial<ReasoningBlueprint>>(jsonText);
+          const parsed = parseCleanJson<Partial<ReasoningBlueprint> & { benchmarkEvaluations?: CloudBenchmarkEvaluation[] }>(jsonText);
 
           if (parsed && Array.isArray(parsed.steps)) {
             parsed.schema = 'prism-blueprint-v1';
@@ -790,7 +845,7 @@ ${topoString}${diffSection}
           }
 
           if (parsed && parsed.schema === 'prism-blueprint-v1' && Array.isArray(parsed.steps)) {
-            cloudParsed = parsed as ReasoningBlueprint;
+            cloudParsed = parsed as ReasoningBlueprint & { benchmarkEvaluations?: CloudBenchmarkEvaluation[] };
             break;
           }
           throw new Error(`Cloud model ${modelName} returned unexpected blueprint schema`);
@@ -803,7 +858,14 @@ ${topoString}${diffSection}
       if (!cloudParsed) {
         throw lastCloudErr || new Error('All cloud models failed');
       }
-      blueprint = cloudParsed;
+      if (Array.isArray(cloudParsed.benchmarkEvaluations)) {
+        cloudBenchmarkEvaluations = cloudParsed.benchmarkEvaluations;
+      }
+      blueprint = {
+        schema: cloudParsed.schema,
+        goal: cloudParsed.goal,
+        steps: cloudParsed.steps,
+      };
 
       // Persist to Firestore cache non-blocking for future offline fallback
       void setDoc(blueprintDocRef, {
@@ -954,10 +1016,22 @@ ${rawContent}
     hydratedReport = `${hydratedReport}\n\n## AI Execution Transparency\n${aiNotices.join('\n')}`;
   }
 
+  // Stage 3 Local Benchmark Hydration (strictly on-device with zero PII egress)
+  const finalSubjectRatios =
+    initialSubjectRatios.length > 0
+      ? initialSubjectRatios
+      : extractSubjectRatios(rawContent, hydratedReport);
+  const benchmarkFindings =
+    benchmarkTopology && finalSubjectRatios.length > 0
+      ? hydrateBenchmarkFindings(benchmarkTopology, finalSubjectRatios, cloudBenchmarkEvaluations)
+      : [];
+
   return {
     topology,
     blueprint,
     hydratedReport,
     telemetry: [telemetryList[0]!, telemetryList[1]!, telemetryList[2]!],
+    benchmarkTopology,
+    benchmarkFindings,
   };
 }

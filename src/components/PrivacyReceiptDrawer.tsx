@@ -1,5 +1,6 @@
 import React from 'react';
 import type { AbstractTopology, ReasoningBlueprint, StageTelemetry } from '../types/prism';
+import type { BenchmarkTopology } from '../types/benchmark';
 import {
   ShieldCheck,
   X,
@@ -18,6 +19,7 @@ interface PrivacyReceiptDrawerProps {
   blueprint: ReasoningBlueprint | null;
   telemetry: StageTelemetry[] | null;
   activeFileNames?: string[];
+  benchmarkTopology?: BenchmarkTopology | null;
 }
 
 export const PrivacyReceiptDrawer: React.FC<PrivacyReceiptDrawerProps> = ({
@@ -27,6 +29,7 @@ export const PrivacyReceiptDrawer: React.FC<PrivacyReceiptDrawerProps> = ({
   blueprint,
   telemetry,
   activeFileNames = [],
+  benchmarkTopology = null,
 }) => {
   const [copiedTopo, setCopiedTopo] = React.useState(false);
   const [copiedBp, setCopiedBp] = React.useState(false);
@@ -213,6 +216,8 @@ export const PrivacyReceiptDrawer: React.FC<PrivacyReceiptDrawerProps> = ({
 {JSON.stringify({
   client_id: "prism_local_sandbox",
   egress_payload_size: 0,
+  raw_pii_bytes_sent: 0,
+  benchmark_topology_included: Boolean(benchmarkTopology),
   hardware_isolated: true,
   cryptographic_nonce: "90e1f37ac69",
   documents: activeFileNames.length > 0 ? activeFileNames : ['Local Confidential Document'],
