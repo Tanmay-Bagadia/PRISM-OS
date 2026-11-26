@@ -287,14 +287,15 @@ export const App: React.FC = () => {
     setTelemetry(null);
     setMetricDeltas([]);
     setComparedSession(null);
+    setComparisonLabel(null);
     setActiveDiffTopology(null);
+    setLastSavedSessionId(null);
     setBenchmarkSourceTitle('');
     setBenchmarkReferenceText('');
     setBenchmarkTopology(null);
     setBenchmarkFindings([]);
     setIsPrivacyReceiptOpen(false);
-    void clearVaultSessions().then(() => setVaultSessions([]));
-    showToast('Workspace & local history reset. New private session started.');
+    showToast('Workspace reset. Saved History & Trends preserved on-device.');
   };
 
   // ─── Execute PRISM Pipeline ───────────────────────────────────────────

@@ -102,4 +102,34 @@ describe('localHistoryVault folder CRUD and session assignment', () => {
     expect(byId.get('sess_b')?.folderId).toBeNull();
     expect(byId.get('sess_c')?.folderId).toBe(otherFolder.id);
   });
+
+  it('preserves Q4 FY26 and Q2 FY27 sessions and folder assignments across a new workspace session flow', async () => {
+    const financeFolder = await createVaultFolder('Quarterly Reviews');
+
+    // Run 1: Q4 FY26 saved into folder
+    await saveVaultSession(
+      makeSession({
+        id: 'sess_q4_fy26',
+        title: 'Q4 FY26',
+        timestamp: '2026-11-25T10:00:00.000Z',
+        folderId: financeFolder.id,
+      }),
+    );
+
+    // User clicks "New Session" -> workspace UI resets without calling clearVaultSessions()
+    // Run 2: Q2 FY27 saved into the same folder
+    await saveVaultSession(
+      makeSession({
+        id: 'sess_q2_fy27',
+        title: 'Q2 FY27',
+        timestamp: '2026-11-26T10:00:00.000Z',
+        folderId: financeFolder.id,
+      }),
+    );
+
+    const sessions = await listVaultSessions();
+    expect(sessions).toHaveLength(2);
+    expect(sessions.map((s) => s.title)).toEqual(['Q2 FY27', 'Q4 FY26']);
+    expect(sessions.every((s) => s.folderId === financeFolder.id)).toBe(true);
+  });
 });

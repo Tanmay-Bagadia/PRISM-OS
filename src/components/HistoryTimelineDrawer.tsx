@@ -70,6 +70,13 @@ export const HistoryTimelineDrawer: React.FC<HistoryTimelineDrawerProps> = ({
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [renameFolderName, setRenameFolderName] = useState('');
   const [selectedRunIds, setSelectedRunIds] = useState<string[]>([]);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setConfirmClearAll(false);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -679,14 +686,42 @@ export const HistoryTimelineDrawer: React.FC<HistoryTimelineDrawerProps> = ({
         {/* Drawer Footer */}
         {sessions.length > 0 && (
           <div className="p-5 border-t border-[#F0EFEA] bg-[#F7F7F5] shrink-0">
-            <button
-              type="button"
-              onClick={onClearAll}
-              className="w-full py-2.5 px-4 bg-white hover:bg-[#FEF2F2] text-[#18181B] hover:text-[#B91C1C] border border-[#E6E5E0] hover:border-[#FECACA] rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Clear All Local History</span>
-            </button>
+            {confirmClearAll ? (
+              <div className="space-y-2">
+                <p className="text-[11px] font-medium text-[#B91C1C] text-center">
+                  Delete all {sessions.length} locally saved snapshot{sessions.length === 1 ? '' : 's'}?
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmClearAll(false)}
+                    className="flex-1 py-2 px-3 bg-white hover:bg-[#F4F4F5] text-[#4B5563] border border-[#E6E5E0] rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmClearAll(false);
+                      onClearAll();
+                    }}
+                    className="flex-1 py-2 px-3 bg-[#B91C1C] hover:bg-[#991B1B] text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Confirm Clear All</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmClearAll(true)}
+                className="w-full py-2.5 px-4 bg-white hover:bg-[#FEF2F2] text-[#18181B] hover:text-[#B91C1C] border border-[#E6E5E0] hover:border-[#FECACA] rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Clear All Local History</span>
+              </button>
+            )}
           </div>
         )}
       </section>
