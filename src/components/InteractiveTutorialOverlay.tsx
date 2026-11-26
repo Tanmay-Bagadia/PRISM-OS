@@ -307,21 +307,33 @@ export const InteractiveTutorialOverlay: React.FC<InteractiveTutorialOverlayProp
     >
       {targetRect ? (
         <>
-          {/* Seamless single-layer blurred backdrop with exact rounded-xl SVG cutout (zero panel seams or square corners) */}
+          {/* Seamless single-layer blurred backdrop with evenodd rounded-rect clip-path (100% unblurred inside cutout, zero seams) */}
           {(() => {
-            const r = Math.min(14, Math.floor(targetRect.width / 2), Math.floor(targetRect.height / 2));
-            const maskSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${viewport.width}" height="${viewport.height}" viewBox="0 0 ${viewport.width} ${viewport.height}"><rect width="100%" height="100%" fill="white"/><rect x="${targetRect.left}" y="${targetRect.top}" width="${targetRect.width}" height="${targetRect.height}" rx="${r}" ry="${r}" fill="black"/></svg>`;
-            const maskUrl = `url("data:image/svg+xml,${encodeURIComponent(maskSvg)}")`;
+            const x = targetRect.left;
+            const y = targetRect.top;
+            const w = targetRect.width;
+            const h = targetRect.height;
+            const r = Math.min(14, Math.floor(w / 2), Math.floor(h / 2));
+            const vw = viewport.width;
+            const vh = viewport.height;
+            const d = [
+              `M 0 0 H ${vw} V ${vh} H 0 Z`,
+              `M ${x + r} ${y}`,
+              `H ${x + w - r}`,
+              `A ${r} ${r} 0 0 1 ${x + w} ${y + r}`,
+              `V ${y + h - r}`,
+              `A ${r} ${r} 0 0 1 ${x + w - r} ${y + h}`,
+              `H ${x + r}`,
+              `A ${r} ${r} 0 0 1 ${x} ${y + h - r}`,
+              `V ${y + r}`,
+              `A ${r} ${r} 0 0 1 ${x + r} ${y} Z`,
+            ].join(' ');
             return (
               <div
                 className="fixed inset-0 backdrop-blur-md bg-slate-950/45 transition-opacity duration-300 pointer-events-none"
                 style={{
-                  maskImage: maskUrl,
-                  WebkitMaskImage: maskUrl,
-                  maskRepeat: 'no-repeat',
-                  WebkitMaskRepeat: 'no-repeat',
-                  maskSize: '100% 100%',
-                  WebkitMaskSize: '100% 100%',
+                  clipPath: `path(evenodd, "${d}")`,
+                  WebkitClipPath: `path(evenodd, "${d}")`,
                 }}
                 aria-hidden="true"
               />
