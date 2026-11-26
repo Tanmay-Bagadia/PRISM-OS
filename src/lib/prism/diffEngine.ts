@@ -85,7 +85,7 @@ function parseMetricValue(rawVal: string): ParsedValue | null {
 
   // Match optional leading currency, signed number with optional commas/decimals, optional k/M/B suffix (not followed by letters like 'ms'), and optional trailing unit
   const match = trimmed.match(
-    /^([$€£¥])?\s*(-?\d{1,3}(?:,\d{3})+|-?\d+)(?:\.(\d+))?\s*([kKmMbB](?![a-zA-Z]))?(?:\s*(%|USD|EUR|GBP|[a-zA-Z][a-zA-Z0-9/%°µμ.-]*))?(?:\s*\(.*\))?$/
+    /^([$€£¥₹])?\s*(-?\d{1,3}(?:,\d{3})+|-?\d+)(?:\.(\d+))?\s*([kKmMbB](?![a-zA-Z]))?(?:\s*(%|USD|EUR|GBP|INR|[a-zA-Z][a-zA-Z0-9/%°µμ.-]*))?(?:\s*\(.*\))?$/
   );
   if (!match) return null;
 
