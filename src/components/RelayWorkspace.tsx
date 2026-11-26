@@ -295,6 +295,7 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
     <main className="w-full max-w-[880px] mx-auto px-4 sm:px-6 pt-7 flex-1 pb-28 sm:pb-36">
       {/* ─── PRIMARY WORKSPACE CONTROL CARD ─────────────────────────────────── */}
       <section
+        data-tutorial-anchor="tutorial-workspace-input"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -383,7 +384,10 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
           </div>
 
           {/* Privacy Compute Posture Segmented Control */}
-          <div className="inline-flex items-center bg-[#EFEFEA] p-0.5 rounded-lg self-start sm:self-auto shrink-0">
+          <div
+            data-tutorial-anchor="tutorial-execution-modes"
+            className="inline-flex items-center bg-[#EFEFEA] p-0.5 rounded-lg self-start sm:self-auto shrink-0"
+          >
             <button
               type="button"
               onClick={() => onChangePosture('vault')}
@@ -542,7 +546,7 @@ export const RelayWorkspace: React.FC<RelayWorkspaceProps> = ({
           )}
           {/* Optional Benchmark & Reference Source Input */}
           {onChangeBenchmarkSourceTitle && onChangeBenchmarkReferenceText && (
-            <div className="mt-3">
+            <div data-tutorial-anchor="tutorial-grounded-benchmarks" className="mt-3">
               <BenchmarkReferenceInput
                 sourceTitle={benchmarkSourceTitle}
                 onChangeSourceTitle={onChangeBenchmarkSourceTitle}

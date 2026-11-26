@@ -6,6 +6,7 @@ import {
   RotateCcw,
   FileLock2,
   History,
+  HelpCircle,
 } from 'lucide-react';
 
 interface TelemetryBarProps {
@@ -21,6 +22,7 @@ interface TelemetryBarProps {
   onOpenPrivacyReceipt: () => void;
   onOpenSafeExport?: () => void;
   onOpenHistory?: () => void;
+  onOpenTutorial?: () => void;
   historyCount?: number;
   onToggleOffline: () => void;
   onClearSession?: () => void;
@@ -33,6 +35,7 @@ export const TelemetryBar: React.FC<TelemetryBarProps> = ({
   onOpenPrivacyReceipt,
   onOpenSafeExport,
   onOpenHistory,
+  onOpenTutorial,
   historyCount = 0,
   onToggleOffline,
   onClearSession,
@@ -122,35 +125,39 @@ export const TelemetryBar: React.FC<TelemetryBarProps> = ({
             </button>
           </div>
 
-          {/* History & Trends Action Button */}
-          {onOpenHistory && (
-            <button
-              onClick={onOpenHistory}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E6E5E0] hover:bg-[#F7F7F5] rounded-lg text-[#18181B] text-xs font-medium shadow-[0_1px_2px_0_rgba(24,24,27,0.03)] active:scale-[0.99] transition-all cursor-pointer tabular-nums"
-              title="Open Local History & Longitudinal Trends"
-            >
-              <History className="w-3.5 h-3.5 text-[#4B5563]" />
-              <span className="hidden md:inline">History &amp; Trends</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-[#F4F4F5] text-[#4B5563] font-mono text-[10px] tabular-nums">
-                {historyCount}
-              </span>
-            </button>
-          )}
+          {/* History & Safe Export Actions */}
+          <div data-tutorial-anchor="tutorial-history-export" className="flex items-center gap-2 sm:gap-2.5">
+            {/* History & Trends Action Button */}
+            {onOpenHistory && (
+              <button
+                onClick={onOpenHistory}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E6E5E0] hover:bg-[#F7F7F5] rounded-lg text-[#18181B] text-xs font-medium shadow-[0_1px_2px_0_rgba(24,24,27,0.03)] active:scale-[0.99] transition-all cursor-pointer tabular-nums"
+                title="Open Local History & Longitudinal Trends"
+              >
+                <History className="w-3.5 h-3.5 text-[#4B5563]" />
+                <span className="hidden md:inline">History &amp; Trends</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-[#F4F4F5] text-[#4B5563] font-mono text-[10px] tabular-nums">
+                  {historyCount}
+                </span>
+              </button>
+            )}
 
-          {/* Safe Export Action Button */}
-          {onOpenSafeExport && (
-            <button
-              onClick={onOpenSafeExport}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E6E5E0] hover:bg-[#ECFDF5] hover:border-[#A7F3D0] rounded-lg text-[#18181B] text-xs font-medium shadow-[0_1px_2px_0_rgba(24,24,27,0.03)] active:scale-[0.99] transition-all cursor-pointer"
-              title="Open Safe-to-Share Redacted Export & Local Action Letter"
-            >
-              <FileLock2 className="w-3.5 h-3.5 text-[#15803D]" />
-              <span className="hidden sm:inline">Safe to Export</span>
-            </button>
-          )}
+            {/* Safe Export Action Button */}
+            {onOpenSafeExport && (
+              <button
+                onClick={onOpenSafeExport}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E6E5E0] hover:bg-[#ECFDF5] hover:border-[#A7F3D0] rounded-lg text-[#18181B] text-xs font-medium shadow-[0_1px_2px_0_rgba(24,24,27,0.03)] active:scale-[0.99] transition-all cursor-pointer"
+                title="Open Safe-to-Share Redacted Export & Local Action Letter"
+              >
+                <FileLock2 className="w-3.5 h-3.5 text-[#15803D]" />
+                <span className="hidden sm:inline">Safe to Export</span>
+              </button>
+            )}
+          </div>
 
           {/* Privacy Receipt Action Button (Triggers Drawer) */}
           <button
+            data-tutorial-anchor="tutorial-privacy-proof"
             onClick={onOpenPrivacyReceipt}
             id="openReceiptBtn"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E6E5E0] hover:bg-[#F7F7F5] rounded-lg text-[#18181B] text-xs font-medium shadow-[0_1px_2px_0_rgba(24,24,27,0.03)] active:scale-[0.99] transition-all cursor-pointer"
@@ -158,6 +165,19 @@ export const TelemetryBar: React.FC<TelemetryBarProps> = ({
             <ShieldCheck className="w-3.5 h-3.5 text-[#15803D]" />
             <span>Privacy Receipt</span>
           </button>
+
+          {/* Interactive Tutorial Trigger */}
+          {onOpenTutorial && (
+            <button
+              type="button"
+              onClick={onOpenTutorial}
+              title="Open Interactive Guided Tutorial"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-[#F7F7F5] border border-[#E6E5E0] hover:bg-[#EFEFEA] rounded-lg text-[#4B5563] hover:text-[#18181B] text-xs font-medium transition-colors cursor-pointer"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-[#15803D]" />
+              <span className="hidden lg:inline">Tutorial</span>
+            </button>
+          )}
         </div>
       </div>
     </header>

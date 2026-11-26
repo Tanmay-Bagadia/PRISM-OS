@@ -22,7 +22,12 @@ import { RelayWorkspace } from './components/RelayWorkspace';
 import { PrivacyReceiptDrawer } from './components/PrivacyReceiptDrawer';
 import { SafeExportModal } from './components/SafeExportModal';
 import { HistoryTimelineDrawer } from './components/HistoryTimelineDrawer';
+import { InteractiveTutorialOverlay } from './components/InteractiveTutorialOverlay';
 import { ExecutionToast, deriveExecutionMode } from './components/ExecutionStatusBanner';
+import {
+  hasCompletedTutorial,
+  markTutorialCompleted,
+} from './lib/prism/tutorialSteps';
 import {
   MobileBlueprintDrawer,
   type CachedBlueprintRecord,
@@ -90,6 +95,7 @@ export const App: React.FC = () => {
   const [isSafeExportOpen, setIsSafeExportOpen] = React.useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
+  const [isTutorialOpen, setIsTutorialOpen] = React.useState<boolean>(() => !hasCompletedTutorial());
   const [cachedBlueprints, setCachedBlueprints] = React.useState<CachedBlueprintRecord[]>([]);
   const [vaultSessions, setVaultSessions] = React.useState<VaultSession[]>([]);
   const [vaultFolders, setVaultFolders] = React.useState<VaultFolder[]>([]);
@@ -296,6 +302,27 @@ export const App: React.FC = () => {
     setBenchmarkFindings([]);
     setIsPrivacyReceiptOpen(false);
     showToast('Workspace reset. Saved History & Trends preserved on-device.');
+  };
+
+  const handleLoadDemoSample = () => {
+    const demoContent = [
+      'Quarterly Operations & Resource Summary (Synthetic Sample)',
+      'Monthly Operating Outflow: $48,000',
+      'Available Liquidity Reserve: $576,000 (12.0 months coverage)',
+      'Underutilized Compute Capacity: 28%',
+      'Primary Review Item: Vendor SLA renewal window closes in 30 days',
+    ].join('\n');
+    const demoFile: ScenarioFile = {
+      id: `demo_${Date.now()}`,
+      name: 'Sample_Operations_Brief.txt',
+      description: 'Neutral synthetic walkthrough sample',
+      category: 'finance',
+      content: demoContent,
+    };
+    setFiles([demoFile]);
+    setActiveFileId(demoFile.id);
+    setPrompt('Summarize key metrics, identify operational risks, and recommend prioritized next steps.');
+    showToast('Loaded neutral demo brief locally. Click "Analyze Privately" to test.');
   };
 
   // ─── Execute PRISM Pipeline ───────────────────────────────────────────
@@ -570,6 +597,7 @@ export const App: React.FC = () => {
         onOpenPrivacyReceipt={() => setIsPrivacyReceiptOpen(true)}
         onOpenSafeExport={() => setIsSafeExportOpen(true)}
         onOpenHistory={() => setIsHistoryOpen(true)}
+        onOpenTutorial={() => setIsTutorialOpen(true)}
         historyCount={vaultSessions.length}
         onToggleOffline={() => {
           const newOnline = !device.online;
@@ -679,6 +707,20 @@ export const App: React.FC = () => {
           showToast(`Loaded Blueprint: "${bp.goal.slice(0, 30)}..."`);
         }}
         onRefreshFromFirestore={refreshBlueprintsFromFirestore}
+      />
+
+      {/* Interactive Guided Tutorial Overlay */}
+      <InteractiveTutorialOverlay
+        isOpen={isTutorialOpen}
+        onClose={() => {
+          markTutorialCompleted();
+          setIsTutorialOpen(false);
+        }}
+        onComplete={() => {
+          markTutorialCompleted();
+          setIsTutorialOpen(false);
+        }}
+        onLoadDemoSample={handleLoadDemoSample}
       />
     </div>
   );
