@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   ShieldCheck,
   ChevronLeft,
@@ -18,13 +18,108 @@ export interface InteractiveTutorialOverlayProps {
   onLoadDemoSample?: () => void;
 }
 
-const HIGHLIGHT_CLASSES = [
-  'ring-2',
-  'ring-[#15803D]',
-  'ring-offset-2',
-  'ring-offset-[#F7F7F5]',
-  'transition-shadow',
-];
+interface CutoutRect {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
+const CUTOUT_PADDING = 8;
+const VIEWPORT_MARGIN = 16;
+const CARD_GAP = 16;
+const DEFAULT_CARD_WIDTH = 360;
+const DEFAULT_CARD_MAX_HEIGHT = 340;
+
+function clamp(value: number, min: number, max: number): number {
+  if (max < min) return min;
+  return Math.min(Math.max(value, min), max);
+}
+
+function getPaddedCutoutRect(el: Element): CutoutRect | null {
+  const raw = el.getBoundingClientRect();
+  if (raw.width <= 0 || raw.height <= 0) return null;
+
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const top = Math.max(0, raw.top - CUTOUT_PADDING);
+  const left = Math.max(0, raw.left - CUTOUT_PADDING);
+  const right = Math.min(vw, raw.right + CUTOUT_PADDING);
+  const bottom = Math.min(vh, raw.bottom + CUTOUT_PADDING);
+  const width = right - left;
+  const height = bottom - top;
+
+  if (width <= 0 || height <= 0) return null;
+  return { top, left, width, height };
+}
+
+function rectsEqual(a: CutoutRect | null, b: CutoutRect | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    Math.abs(a.top - b.top) < 0.5 &&
+    Math.abs(a.left - b.left) < 0.5 &&
+    Math.abs(a.width - b.width) < 0.5 &&
+    Math.abs(a.height - b.height) < 0.5
+  );
+}
+
+function computeCardPosition(
+  rect: CutoutRect | null,
+  cardWidth: number,
+  cardHeight: number,
+  vw: number,
+  vh: number
+): { top: number; left: number } {
+  const maxLeft = Math.max(VIEWPORT_MARGIN, vw - cardWidth - VIEWPORT_MARGIN);
+  const maxTop = Math.max(VIEWPORT_MARGIN, vh - cardHeight - VIEWPORT_MARGIN);
+
+  if (!rect) {
+    return {
+      top: clamp((vh - cardHeight) / 2, VIEWPORT_MARGIN, maxTop),
+      left: clamp((vw - cardWidth) / 2, VIEWPORT_MARGIN, maxLeft),
+    };
+  }
+
+  const cutoutBottom = rect.top + rect.height;
+  const cutoutRight = rect.left + rect.width;
+  const centeredLeft = clamp(
+    rect.left + rect.width / 2 - cardWidth / 2,
+    VIEWPORT_MARGIN,
+    maxLeft
+  );
+  const centeredTop = clamp(
+    rect.top + rect.height / 2 - cardHeight / 2,
+    VIEWPORT_MARGIN,
+    maxTop
+  );
+
+  // 1. Prefer placing below the cutout
+  if (cutoutBottom + CARD_GAP + cardHeight <= vh - VIEWPORT_MARGIN) {
+    return { top: cutoutBottom + CARD_GAP, left: centeredLeft };
+  }
+
+  // 2. Otherwise place above the cutout
+  if (rect.top - CARD_GAP - cardHeight >= VIEWPORT_MARGIN) {
+    return { top: rect.top - CARD_GAP - cardHeight, left: centeredLeft };
+  }
+
+  // 3. For tall elements, place to the right
+  if (cutoutRight + CARD_GAP + cardWidth <= vw - VIEWPORT_MARGIN) {
+    return { top: centeredTop, left: cutoutRight + CARD_GAP };
+  }
+
+  // 4. Or to the left
+  if (rect.left - CARD_GAP - cardWidth >= VIEWPORT_MARGIN) {
+    return { top: centeredTop, left: rect.left - CARD_GAP - cardWidth };
+  }
+
+  // 5. Fallback: clamp cleanly inside viewport margins
+  return {
+    top: clamp(vh - cardHeight - VIEWPORT_MARGIN, VIEWPORT_MARGIN, maxTop),
+    left: clamp(vw - cardWidth - VIEWPORT_MARGIN, VIEWPORT_MARGIN, maxLeft),
+  };
+}
 
 export const InteractiveTutorialOverlay: React.FC<InteractiveTutorialOverlayProps> = ({
   isOpen,
@@ -33,6 +128,14 @@ export const InteractiveTutorialOverlay: React.FC<InteractiveTutorialOverlayProp
   onLoadDemoSample,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [targetRect, setTargetRect] = useState<CutoutRect | null>(null);
+  const [viewport, setViewport] = useState(() => ({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1280,
+    height: typeof window !== 'undefined' ? window.innerHeight : 800,
+  }));
+  const [measuredCardHeight, setMeasuredCardHeight] = useState<number>(DEFAULT_CARD_MAX_HEIGHT);
+  const cardRef = useRef<HTMLElement | null>(null);
+
   const steps: TutorialStep[] = PRISM_TUTORIAL_STEPS;
   const totalSteps = steps.length;
   const step = steps[currentIndex];
@@ -43,6 +146,8 @@ export const InteractiveTutorialOverlay: React.FC<InteractiveTutorialOverlayProp
   useEffect(() => {
     if (isOpen) {
       setCurrentIndex(0);
+    } else {
+      setTargetRect(null);
     }
   }, [isOpen]);
 
@@ -79,51 +184,206 @@ export const InteractiveTutorialOverlay: React.FC<InteractiveTutorialOverlayProp
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose, handleNext, handleBack]);
 
-  // Scroll target anchor into view and apply temporary ring highlight
+  // Track rendered tutorial card height for collision-free placement
   useEffect(() => {
-    if (!isOpen || !step?.targetAnchorId) return;
+    if (!isOpen || !cardRef.current) return;
+
+    const updateCardHeight = () => {
+      if (!cardRef.current) return;
+      const height = cardRef.current.getBoundingClientRect().height;
+      if (height > 0) {
+        setMeasuredCardHeight(height);
+      }
+    };
+
+    updateCardHeight();
+
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(updateCardHeight);
+    observer.observe(cardRef.current);
+    return () => observer.disconnect();
+  }, [isOpen, currentIndex]);
+
+  // Locate target anchor, scroll into view, and track live bounding rect
+  useEffect(() => {
+    if (!isOpen || !step?.targetAnchorId) {
+      setTargetRect(null);
+      return;
+    }
 
     let targetEl: Element | null = null;
     try {
       const selector = `[data-tutorial-anchor="${step.targetAnchorId}"], #${step.targetAnchorId}`;
       targetEl = document.querySelector(selector);
     } catch {
+      setTargetRect(null);
       return;
     }
 
-    if (!targetEl) return;
+    if (!targetEl) {
+      setTargetRect(null);
+      return;
+    }
 
-    targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    targetEl.classList.add(...HIGHLIGHT_CLASSES);
+    targetEl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
 
-    const timer = window.setTimeout(() => {
-      targetEl?.classList.remove(...HIGHLIGHT_CLASSES);
-    }, 2400);
+    let rafId: number | null = null;
+    let smoothScrollFrames = 0;
+
+    const syncMeasurements = () => {
+      setViewport((prev) =>
+        prev.width === window.innerWidth && prev.height === window.innerHeight
+          ? prev
+          : { width: window.innerWidth, height: window.innerHeight }
+      );
+      if (!targetEl) return;
+      const nextRect = getPaddedCutoutRect(targetEl);
+      setTargetRect((prev) => (rectsEqual(prev, nextRect) ? prev : nextRect));
+    };
+
+    const scheduleUpdate = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        syncMeasurements();
+      });
+    };
+
+    // Track smooth scroll animation frames briefly after step change
+    let scrollTrackRaf: number | null = null;
+    const trackSmoothScroll = () => {
+      syncMeasurements();
+      smoothScrollFrames += 1;
+      if (smoothScrollFrames < 40) {
+        scrollTrackRaf = window.requestAnimationFrame(trackSmoothScroll);
+      }
+    };
+    scrollTrackRaf = window.requestAnimationFrame(trackSmoothScroll);
+
+    window.addEventListener('scroll', scheduleUpdate, true);
+    window.addEventListener('resize', scheduleUpdate);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(scheduleUpdate);
+      resizeObserver.observe(targetEl);
+      if (document.body) {
+        resizeObserver.observe(document.body);
+      }
+    }
 
     return () => {
-      window.clearTimeout(timer);
-      targetEl?.classList.remove(...HIGHLIGHT_CLASSES);
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+      if (scrollTrackRaf !== null) window.cancelAnimationFrame(scrollTrackRaf);
+      window.removeEventListener('scroll', scheduleUpdate, true);
+      window.removeEventListener('resize', scheduleUpdate);
+      resizeObserver?.disconnect();
     };
   }, [isOpen, step?.targetAnchorId]);
+
+  const cardWidth = Math.min(DEFAULT_CARD_WIDTH, Math.max(240, viewport.width - VIEWPORT_MARGIN * 2));
+  const effectiveCardHeight = Math.min(measuredCardHeight, Math.max(200, viewport.height - VIEWPORT_MARGIN * 2));
+
+  const cardPosition = useMemo(
+    () =>
+      computeCardPosition(
+        targetRect,
+        cardWidth,
+        effectiveCardHeight,
+        viewport.width,
+        viewport.height
+      ),
+    [targetRect, cardWidth, effectiveCardHeight, viewport.width, viewport.height]
+  );
 
   if (!isOpen || !step) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 pointer-events-auto"
+      className="fixed inset-0 z-50 pointer-events-none"
       role="dialog"
       aria-modal="true"
       aria-labelledby="prism-tutorial-title"
     >
-      {/* Subtle non-intrusive backdrop */}
-      <div
-        className="fixed inset-0 bg-[#18181B]/15 backdrop-blur-[1px] transition-opacity"
-        onClick={onClose}
-        aria-hidden="true"
-      />
+      {targetRect ? (
+        <>
+          {/* 4-Panel Blurred Backdrop keeping the target cutout 100% unblurred & clickable */}
+          <div
+            className="fixed backdrop-blur-md bg-slate-950/45 transition-all duration-300 pointer-events-auto"
+            style={{
+              top: 0,
+              left: 0,
+              right: 0,
+              height: targetRect.top,
+            }}
+            onClick={onClose}
+            aria-hidden="true"
+          />
+          <div
+            className="fixed backdrop-blur-md bg-slate-950/45 transition-all duration-300 pointer-events-auto"
+            style={{
+              top: targetRect.top + targetRect.height,
+              left: 0,
+              right: 0,
+              bottom: 0,
+            }}
+            onClick={onClose}
+            aria-hidden="true"
+          />
+          <div
+            className="fixed backdrop-blur-md bg-slate-950/45 transition-all duration-300 pointer-events-auto"
+            style={{
+              top: targetRect.top,
+              left: 0,
+              width: targetRect.left,
+              height: targetRect.height,
+            }}
+            onClick={onClose}
+            aria-hidden="true"
+          />
+          <div
+            className="fixed backdrop-blur-md bg-slate-950/45 transition-all duration-300 pointer-events-auto"
+            style={{
+              top: targetRect.top,
+              left: targetRect.left + targetRect.width,
+              right: 0,
+              height: targetRect.height,
+            }}
+            onClick={onClose}
+            aria-hidden="true"
+          />
 
-      {/* Floating walkthrough card */}
-      <section className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-[400px] bg-white border border-[#E6E5E0] rounded-2xl shadow-[0_16px_40px_rgba(24,24,27,0.14)] p-5 flex flex-col gap-4 z-50">
+          {/* Crisp glowing cutout ring (non-blocking) */}
+          <div
+            className="fixed ring-2 ring-emerald-400 shadow-[0_0_0_4px_rgba(16,185,129,0.2)] rounded-xl transition-all duration-300 pointer-events-none"
+            style={{
+              top: targetRect.top,
+              left: targetRect.left,
+              width: targetRect.width,
+              height: targetRect.height,
+            }}
+            aria-hidden="true"
+          />
+        </>
+      ) : (
+        /* Graceful fallback when target element is not rendered on screen */
+        <div
+          className="fixed inset-0 backdrop-blur-md bg-slate-950/45 transition-opacity duration-300 pointer-events-auto"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Teleporting walkthrough card */}
+      <section
+        ref={cardRef}
+        style={{
+          top: cardPosition.top,
+          left: cardPosition.left,
+          width: cardWidth,
+        }}
+        className="fixed z-50 pointer-events-auto bg-white border border-[#E6E5E0] rounded-2xl shadow-[0_16px_40px_rgba(24,24,27,0.18)] p-5 flex flex-col gap-3.5 max-h-[calc(100vh-32px)] overflow-y-auto transition-all duration-300 ease-out"
+      >
         {/* Header: Step pills + Close */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -205,20 +465,20 @@ export const InteractiveTutorialOverlay: React.FC<InteractiveTutorialOverlayProp
                 className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-[#E6E5E0] hover:border-[#18181B] text-xs font-medium text-[#18181B] shadow-xs transition-colors cursor-pointer"
               >
                 <FileText className="w-3.5 h-3.5 text-[#15803D]" />
-                <span>Load Neutral Demo Brief</span>
+                <span>Try Sample Note</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Footer Controls: Skip Tour, Back, Next / Finish Tour */}
+        {/* Footer Controls: Skip, Back, Next / Done */}
         <div className="flex items-center justify-between pt-1 border-t border-[#E6E5E0]">
           <button
             type="button"
             onClick={onComplete}
             className="text-xs font-medium text-[#6B7280] hover:text-[#18181B] transition-colors cursor-pointer"
           >
-            Skip Tour
+            Skip
           </button>
 
           <div className="flex items-center gap-2">
@@ -244,7 +504,7 @@ export const InteractiveTutorialOverlay: React.FC<InteractiveTutorialOverlayProp
               {isLastStep ? (
                 <>
                   <CheckCircle2 className="w-3.5 h-3.5 text-[#4ADE80]" />
-                  <span>Finish Tour</span>
+                  <span>Done</span>
                 </>
               ) : (
                 <>

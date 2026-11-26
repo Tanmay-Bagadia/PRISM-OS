@@ -68,6 +68,15 @@ describe('PRISM_TUTORIAL_STEPS', () => {
       'tutorial-history-export',
     ]);
   });
+
+  it('uses plain everyday language without engineering or AI jargon', () => {
+    const jargonPattern = /\b(topology|hydration|hydrated|rehydrate|egress|indexeddb|air-gapped|pii)\b/i;
+
+    for (const step of PRISM_TUTORIAL_STEPS) {
+      const copy = `${step.title} ${step.subtitle} ${step.privacyGuarantee} ${step.actionHint}`;
+      expect(copy).not.toMatch(jargonPattern);
+    }
+  });
 });
 
 describe('tutorial localStorage helpers', () => {
