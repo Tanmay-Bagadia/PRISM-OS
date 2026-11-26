@@ -637,7 +637,7 @@ export const App: React.FC = () => {
         benchmarkTopology={benchmarkTopology}
       />
 
-      {/* Safe-to-Share Redacted Export & Action Letter Modal */}
+      {/* Dual-Mode Safe-to-Export & Share Modal */}
       <SafeExportModal
         isOpen={isSafeExportOpen}
         onClose={() => setIsSafeExportOpen(false)}
@@ -647,6 +647,8 @@ export const App: React.FC = () => {
         hydratedReport={hydratedReport}
         topology={topology}
         documentTitle={files[0]?.name || 'prism-document'}
+        benchmarkFindings={benchmarkFindings}
+        metricDeltas={metricDeltas}
       />
 
       {/* Local Longitudinal History & Trends Drawer */}

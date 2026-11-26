@@ -145,7 +145,7 @@ export const TelemetryBar: React.FC<TelemetryBarProps> = ({
               title="Open Safe-to-Share Redacted Export & Local Action Letter"
             >
               <FileLock2 className="w-3.5 h-3.5 text-[#15803D]" />
-              <span className="hidden sm:inline">Safe Export</span>
+              <span className="hidden sm:inline">Safe to Export</span>
             </button>
           )}
 

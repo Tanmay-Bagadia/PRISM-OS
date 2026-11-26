@@ -295,7 +295,7 @@ export const FullReportAccordion: React.FC<FullReportAccordionProps> = ({
                 title="Redact PII & Draft Local Action Letter"
               >
                 <FileLock2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Safe Export</span>
+                <span className="hidden sm:inline">Safe to Export</span>
               </button>
             )}
             <ChevronDown className="w-4 h-4 text-[#6B7280] group-open:rotate-180 transition-transform ml-1" />
