@@ -3,13 +3,20 @@ import {
   ShieldCheck,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   X,
   CheckCircle2,
   Lightbulb,
   FileText,
+  Cpu,
+  RefreshCw,
 } from 'lucide-react';
 import type { TutorialStep } from '../types/tutorial';
 import { PRISM_TUTORIAL_STEPS } from '../lib/prism/tutorialSteps';
+import {
+  detectOnDeviceGeminiNano,
+  type OnDeviceCapabilityReport,
+} from '../lib/prism/onDeviceCapability';
 
 export interface InteractiveTutorialOverlayProps {
   isOpen: boolean;
@@ -134,6 +141,9 @@ export const InteractiveTutorialOverlay: React.FC<InteractiveTutorialOverlayProp
     height: typeof window !== 'undefined' ? window.innerHeight : 800,
   }));
   const [measuredCardHeight, setMeasuredCardHeight] = useState<number>(DEFAULT_CARD_MAX_HEIGHT);
+  const [capabilityReport, setCapabilityReport] = useState<OnDeviceCapabilityReport | null>(null);
+  const [isCheckingCapability, setIsCheckingCapability] = useState(false);
+  const [showEnablementHint, setShowEnablementHint] = useState(false);
   const cardRef = useRef<HTMLElement | null>(null);
 
   const steps: TutorialStep[] = PRISM_TUTORIAL_STEPS;
@@ -141,15 +151,38 @@ export const InteractiveTutorialOverlay: React.FC<InteractiveTutorialOverlayProp
   const step = steps[currentIndex];
   const isFirstStep = currentIndex === 0;
   const isLastStep = currentIndex === totalSteps - 1;
+  const isNanoAvailable = capabilityReport?.status === 'AVAILABLE';
 
-  // Reset to step 0 whenever the overlay is opened
+  const runCapabilityCheck = useCallback(async (isCancelled?: () => boolean) => {
+    setIsCheckingCapability(true);
+    try {
+      const report = await detectOnDeviceGeminiNano();
+      if (!isCancelled?.()) {
+        setCapabilityReport(report);
+      }
+    } finally {
+      if (!isCancelled?.()) {
+        setIsCheckingCapability(false);
+      }
+    }
+  }, []);
+
+  // Reset to step 0 and run on-device AI capability check whenever the overlay opens
   useEffect(() => {
+    let cancelled = false;
+
     if (isOpen) {
       setCurrentIndex(0);
+      setShowEnablementHint(false);
+      void runCapabilityCheck(() => cancelled);
     } else {
       setTargetRect(null);
     }
-  }, [isOpen]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, runCapabilityCheck]);
 
   const handleNext = useCallback(() => {
     if (isLastStep) {
@@ -446,6 +479,100 @@ export const InteractiveTutorialOverlay: React.FC<InteractiveTutorialOverlayProp
           </h2>
           <p className="text-xs leading-relaxed text-[#4B5563]">{step.subtitle}</p>
         </div>
+
+        {/* Step 1: Compact on-device AI status pill */}
+        {step.id === 'WORKSPACE_INPUT' && (
+          <div className="flex items-center">
+            {isCheckingCapability && !capabilityReport ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#F7F7F5] text-[#4B5563] border border-[#E6E5E0]">
+                <RefreshCw className="w-3 h-3 animate-spin" />
+                <span>Checking on-device Gemini Nano...</span>
+              </span>
+            ) : isNanoAvailable ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#15803D] border border-[#A7F3D0]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#16A34A]" />
+                <span>Gemini Nano Active</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#D97706]" />
+                <span>Nano Not Enabled • Auto-Hybrid Ready</span>
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Step 2: Prominent live On-Device AI (Gemini Nano) Check card */}
+        {step.id === 'EXECUTION_MODES' && (
+          <div className="rounded-xl border border-[#E6E5E0] bg-[#FAFAFA] p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <Cpu className="w-3.5 h-3.5 text-[#18181B]" />
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#18181B]">
+                  On-Device AI (Gemini Nano) Check
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void runCapabilityCheck()}
+                disabled={isCheckingCapability}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-[#E6E5E0] bg-white hover:bg-[#F7F7F5] text-[11px] font-medium text-[#18181B] transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <RefreshCw className={`w-3 h-3 ${isCheckingCapability ? 'animate-spin' : ''}`} />
+                <span>Re-check</span>
+              </button>
+            </div>
+
+            {isCheckingCapability && !capabilityReport ? (
+              <p className="text-xs text-[#4B5563]">Checking whether your browser supports on-device Gemini Nano...</p>
+            ) : isNanoAvailable ? (
+              <div className="space-y-1.5">
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#15803D] border border-[#A7F3D0]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#16A34A]" />
+                  <span>Gemini Nano Active</span>
+                </span>
+                <p className="text-xs leading-relaxed text-[#14532D]">
+                  On-device AI is ready on this browser for zero-network local processing—your files never need to leave your computer.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#D97706]" />
+                  <span>Nano Not Enabled • Auto-Hybrid Ready</span>
+                </span>
+                <p className="text-xs leading-relaxed text-[#4B5563]">
+                  No worries—PRISM-OS still hides all your personal info locally first and automatically uses anonymized Cloud AI when needed.
+                </p>
+
+                {capabilityReport?.enablementHint && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setShowEnablementHint((prev) => !prev)}
+                      aria-expanded={showEnablementHint}
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-[#18181B] hover:underline cursor-pointer"
+                    >
+                      <span>How to enable Nano in Chrome</span>
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 transition-transform ${
+                          showEnablementHint ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+
+                    {showEnablementHint && (
+                      <p className="mt-1.5 rounded-lg bg-white border border-[#E6E5E0] p-2 text-[11px] leading-relaxed text-[#4B5563] break-words">
+                        {capabilityReport.enablementHint}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* "What Stays On-Device" emerald privacy callout */}
         <div className="rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] p-3 flex items-start gap-2.5">

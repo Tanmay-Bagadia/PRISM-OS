@@ -1,0 +1,17 @@
+{
+  "name": "PRISM-OS — Private Hybrid AI Workspace",
+  "short_name": "PRISM-OS",
+  "description": "Privacy-preserving Hybrid AI workspace with zero-PII cloud reasoning, on-device Gemini Nano support, and local-first IndexedDB storage.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F7F5",
+  "theme_color": "#15803D",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
